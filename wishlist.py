@@ -31,7 +31,10 @@ def get_wishlist_links(url):
     print("Status Code:", response.status_code)
     print("HTML Length:", len(response.text))
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(
+        response.text,
+        "html.parser"
+    )
 
     links = []
 
@@ -54,6 +57,7 @@ def sync_wishlist(wishlist_url):
 
     try:
         links = get_wishlist_links(wishlist_url)
+
     except requests.exceptions.RequestException as error:
         print(f"Could not read the Amazon wishlist: {error}")
         return
@@ -75,17 +79,30 @@ def sync_wishlist(wishlist_url):
     removed_count = 0
 
     for index, link in enumerate(links, start=1):
-        print(f"\nChecking wishlist product {index}/{len(links)}")
+        print(
+            f"\nChecking wishlist product "
+            f"{index}/{len(links)}"
+        )
         print(link)
 
-        # Keep existing product data, including its custom target price.
+        # Keep all existing product data,
+        # including price history and sale status.
         if link in tracked_lookup:
-            updated_products.append(tracked_lookup[link])
+            existing_product = tracked_lookup[link]
+
+            existing_product.setdefault(
+                "was_on_sale",
+                False
+            )
+
+            updated_products.append(existing_product)
+
             print("Product is already being tracked.")
             skipped_count += 1
             continue
 
-        # Only scrape products that are new to the wishlist tracker.
+        # Only scrape products that are new
+        # to the wishlist tracker.
         product_info = get_product_info(link)
 
         if (
@@ -106,7 +123,11 @@ def sync_wishlist(wishlist_url):
         new_product = {
             "name": product_info["title"],
             "url": link,
-            "last_price": price
+            "last_price": price,
+            "was_on_sale": product_info.get(
+                "is_on_sale",
+                False
+            )
         }
 
         updated_products.append(new_product)
@@ -118,7 +139,10 @@ def sync_wishlist(wishlist_url):
 
     for product in tracked_products:
         if product["url"] not in wishlist_urls:
-            print(f"\nRemoved from tracking: {product['name']}")
+            print(
+                f"\nRemoved from tracking: "
+                f"{product['name']}"
+            )
             removed_count += 1
 
     replace_products(updated_products)
