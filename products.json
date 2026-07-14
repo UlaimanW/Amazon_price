@@ -1,20 +1,38 @@
 [
     {
+        "name": "Digital Alarm Clock, with Wooden Electronic LED Time Display, 3 Alarm Settings, Humidity & Temperature Detect, Wood Made Electric Clocks for Bedroom, Bedside, Black",
+        "url": "https://www.amazon.sa/dp/B07RKTVQDR",
+        "last_price": 46.97,
+        "was_on_sale": true,
+        "image_url": "https://m.media-amazon.com/images/I/519KjH0LTrL._AC_SL1500_.jpg",
+        "original_price": null,
+        "discount_text": null
+    },
+    {
         "name": "PlayStation 5 DualSense®Wireless Controller (KSA Version) Galactic Purple, 2 Year Manufacturer Warranty",
         "url": "https://www.amazon.sa/dp/B09Q4ZXSY1",
         "last_price": 275.9,
-        "was_on_sale": true
+        "was_on_sale": true,
+        "image_url": "https://m.media-amazon.com/images/I/61kVo6d7zNL._AC_SL1500_.jpg",
+        "original_price": 369.0,
+        "discount_text": "-25%"
     },
     {
         "name": "Lamicall Stand for Apple Watch, Charging Stand - [Not Charger] Desk iWatch Holder Charging Dock Station for Apple Watch Ultra2, Ultra, Series 10/9/8/SE2/7/6/SE/5/4/3/2/1 (49/45/44/42/41/38mm)- Black",
         "url": "https://www.amazon.sa/dp/B07Q8TQ892",
         "last_price": 49.99,
-        "was_on_sale": true
+        "was_on_sale": true,
+        "image_url": "https://m.media-amazon.com/images/I/61ZNTZiyfiL._AC_SL1300_.jpg",
+        "original_price": null,
+        "discount_text": null
     },
     {
         "name": "Sony WH-1000XM6 The Best Wireless Noise Canceling Headphones, HD NC Processor QN3, 12 Microphones, Adaptive NC Optimizer, Mastered by Engineers, Studio-Quality, 30-Hour Battery, Midnight Blue",
         "url": "https://www.amazon.sa/dp/B0F3PT1VBL",
         "last_price": 1279.0,
-        "was_on_sale": true
+        "was_on_sale": true,
+        "image_url": "https://m.media-amazon.com/images/I/61drDn6HJRL._AC_SL1500_.jpg",
+        "original_price": 1699.0,
+        "discount_text": "-25%"
     }
 ]

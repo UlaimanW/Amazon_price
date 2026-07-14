@@ -40,6 +40,26 @@ def find_first_text(soup, selectors):
     return None
 
 
+def detect_product_image(soup):
+    image_selectors = [
+        "#landingImage",
+        "#imgBlkFront",
+        "#main-image",
+        "img.a-dynamic-image",
+    ]
+
+    for selector in image_selectors:
+        image = soup.select_one(selector)
+        if not image:
+            continue
+
+        image_url = image.get("data-old-hires") or image.get("src")
+        if image_url and image_url.startswith("http"):
+            return image_url
+
+    return None
+
+
 def detect_discount_text(soup):
     discount_selectors = [
         "span.savingsPercentage",
@@ -273,6 +293,8 @@ def get_product_info(url, max_attempts=6):
             return {
                 "title": title,
                 "price": price_text,
+                "status": "success",
+                "image_url": detect_product_image(soup),
                 "is_on_sale": is_on_sale,
                 "discount_text": discount_text,
                 "original_price": original_price,
@@ -321,6 +343,8 @@ def get_product_info(url, max_attempts=6):
     return {
         "title": "Title not found",
         "price": "Price not found",
+        "status": "failed",
+        "image_url": None,
         "is_on_sale": False,
         "discount_text": None,
         "original_price": None,

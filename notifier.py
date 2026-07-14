@@ -16,7 +16,7 @@ def send_telegram_message(message):
         "text": message
     }
 
-    response = requests.post(url, data=payload)
+    response = requests.post(url, data=payload, timeout=15)
     response.raise_for_status()
 
     return response.json()

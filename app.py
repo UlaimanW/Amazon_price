@@ -3,6 +3,7 @@ import argparse
 from config import WISHLIST_URL, validate_config
 from price_checker import check_prices
 from storage import load_products, remove_product
+from price_history import get_product_stats
 from wishlist import sync_wishlist
 
 
@@ -23,6 +24,13 @@ def list_products():
         print(f"Name         : {product['name']}")
         print(f"Current Price: {product['last_price']} SAR")
         print(f"URL          : {product['url']}")
+
+        stats = get_product_stats(product["url"])
+        if stats["observations"]:
+            print(f"Lowest Price : {stats['lowest_price']:.2f} SAR")
+            print(f"Highest Price: {stats['highest_price']:.2f} SAR")
+            print(f"Average Price: {stats['average_price']:.2f} SAR")
+            print(f"Observations : {stats['observations']}")
 
     print("\n" + "=" * 70)
 

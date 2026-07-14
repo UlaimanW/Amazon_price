@@ -5,8 +5,18 @@ PRODUCTS_FILE = "products.json"
 
 
 def load_products():
-    with open(PRODUCTS_FILE, "r", encoding="utf-8") as file:
-        return json.load(file)
+    try:
+        with open(PRODUCTS_FILE, "r", encoding="utf-8") as file:
+            data = json.load(file)
+    except FileNotFoundError:
+        return []
+    except json.JSONDecodeError as error:
+        raise ValueError(f"{PRODUCTS_FILE} contains invalid JSON") from error
+
+    if not isinstance(data, list):
+        raise ValueError(f"{PRODUCTS_FILE} must contain a JSON list")
+
+    return data
 
 
 def save_products(products):

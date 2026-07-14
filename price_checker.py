@@ -1,4 +1,5 @@
 from notifier import send_telegram_message
+from price_history import record_price
 from scraper import get_product_info, parse_price
 from storage import load_products, save_products
 
@@ -27,9 +28,11 @@ def check_prices():
         product_info = get_product_info(url)
 
         current_price_text = product_info["price"]
+        scrape_status = product_info.get("status", "failed")
         is_on_sale = product_info.get("is_on_sale", False)
         discount_text = product_info.get("discount_text")
         original_price = product_info.get("original_price")
+        image_url = product_info.get("image_url")
 
         print("Current price:", current_price_text)
         print("Last price:", last_price)
@@ -37,17 +40,34 @@ def check_prices():
         print("Currently on sale:", is_on_sale)
 
         if (
+            scrape_status != "success"
+            or
             current_price_text == "Price not found"
             or current_price_text is None
         ):
-            print("Could not get price, skipping...")
+            print("Could not get price; keeping the last valid price.")
+            record_price(
+                url=url, name=name, price=None, scrape_status="failed"
+            )
             continue
 
         current_price = parse_price(current_price_text)
 
         if current_price is None:
             print("Price format invalid, skipping...")
+            record_price(
+                url=url, name=name, price=None,
+                scrape_status="invalid_price"
+            )
             continue
+
+        record_price(
+            url=url,
+            name=name,
+            price=current_price,
+            is_on_sale=is_on_sale,
+            original_price=original_price,
+        )
 
         price_dropped = current_price < last_price
 
@@ -136,6 +156,10 @@ def check_prices():
 
         product["last_price"] = current_price
         product["was_on_sale"] = is_on_sale
+        product["original_price"] = original_price
+        product["discount_text"] = discount_text
+        if image_url:
+            product["image_url"] = image_url
 
     save_products(products)
 

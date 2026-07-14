@@ -66,6 +66,13 @@ def sync_wishlist(wishlist_url):
 
     tracked_products = load_products()
 
+    if not links and tracked_products:
+        print(
+            "Wishlist returned no products. Keeping all existing products "
+            "because the page may be blocked, private, or incomplete."
+        )
+        return False
+
     tracked_lookup = {
         product["url"]: product
         for product in tracked_products
@@ -127,7 +134,10 @@ def sync_wishlist(wishlist_url):
             "was_on_sale": product_info.get(
                 "is_on_sale",
                 False
-            )
+            ),
+            "image_url": product_info.get("image_url"),
+            "original_price": product_info.get("original_price"),
+            "discount_text": product_info.get("discount_text"),
         }
 
         updated_products.append(new_product)
@@ -152,3 +162,4 @@ def sync_wishlist(wishlist_url):
     print(f"Skipped : {skipped_count}")
     print(f"Removed : {removed_count}")
     print(f"Failed  : {failed_count}")
+    return True

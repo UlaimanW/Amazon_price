@@ -40,9 +40,9 @@ jobs:
           WISHLIST_URL: ${{ secrets.WISHLIST_URL }}
         run: python app.py run
 
-      - name: Commit updated products.json
+      - name: Commit updated tracker data
         run: |
-          if git diff --quiet -- products.json; then
+          if git diff --quiet -- products.json price_history.db; then
             echo "No changes detected."
             exit 0
           fi
@@ -50,6 +50,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add products.json
+          git add products.json price_history.db
           git commit -m "Update tracked product prices"
           git push
