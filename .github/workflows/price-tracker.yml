@@ -4,8 +4,10 @@ on:
   workflow_dispatch:
 
   schedule:
-    # 09:07 UTC = 12:07 PM Saudi Arabia (UTC+3)
-    - cron: "7 9 * * *"
+    # 21:00 UTC = 12:00 AM Saudi Arabia (UTC+3)
+    - cron: "0 21 * * *"
+    # 09:00 UTC = 12:00 PM Saudi Arabia (UTC+3)
+    - cron: "0 9 * * *"
 
 permissions:
   contents: write

@@ -1,5 +1,9 @@
 from notifier import send_telegram_message
-from price_history import record_price
+from price_history import (
+    create_run_id,
+    get_latest_successful_observation,
+    record_price,
+)
 from scraper import get_product_info, parse_price
 from storage import load_products, save_products
 
@@ -13,6 +17,7 @@ def shorten_name(name, max_length=70):
 
 def check_prices():
     products = load_products()
+    run_id = create_run_id()
 
     for product in products:
         name = product["name"]
@@ -20,8 +25,13 @@ def check_prices():
 
         url = product["url"]
 
-        last_price = float(product["last_price"])
-        was_on_sale = product.get("was_on_sale", False)
+        latest_observation = get_latest_successful_observation(url)
+        if latest_observation:
+            previous_price = float(latest_observation["price"])
+            previously_on_sale = bool(latest_observation["is_on_sale"])
+        else:
+            previous_price = float(product["last_price"])
+            previously_on_sale = product.get("was_on_sale", False)
 
         print(f"\nChecking: {name}")
 
@@ -35,8 +45,8 @@ def check_prices():
         image_url = product_info.get("image_url")
 
         print("Current price:", current_price_text)
-        print("Last price:", last_price)
-        print("Previously on sale:", was_on_sale)
+        print("Last price:", previous_price)
+        print("Previously on sale:", previously_on_sale)
         print("Currently on sale:", is_on_sale)
 
         if (
@@ -47,7 +57,8 @@ def check_prices():
         ):
             print("Could not get price; keeping the last valid price.")
             record_price(
-                url=url, name=name, price=None, scrape_status="failed"
+                url=url, name=name, price=None, scrape_status="failed",
+                run_id=run_id,
             )
             continue
 
@@ -57,24 +68,28 @@ def check_prices():
             print("Price format invalid, skipping...")
             record_price(
                 url=url, name=name, price=None,
-                scrape_status="invalid_price"
+                scrape_status="invalid_price", run_id=run_id,
             )
             continue
 
-        record_price(
+        price_dropped = current_price < previous_price
+        sale_started = is_on_sale and not previously_on_sale
+
+        price_event = record_price(
             url=url,
             name=name,
             price=current_price,
             is_on_sale=is_on_sale,
             original_price=original_price,
+            run_id=run_id,
+            previous_price=previous_price,
+            previous_on_sale=previously_on_sale,
+            price_dropped=price_dropped,
+            sale_started=sale_started,
         )
 
-        price_dropped = current_price < last_price
-
-        sale_started = (
-            is_on_sale
-            and not was_on_sale
-        )
+        price_dropped = price_event["price_dropped"]
+        sale_started = price_event["sale_started"]
 
         if price_dropped or sale_started:
             alert_reasons = []
@@ -96,10 +111,10 @@ def check_prices():
             ]
 
             if price_dropped:
-                price_drop_savings = last_price - current_price
+                price_drop_savings = previous_price - current_price
 
                 message_lines.append(
-                    f"📉 Previous price: {last_price:.2f} SAR"
+                    f"📉 Previous price: {previous_price:.2f} SAR"
                 )
 
                 message_lines.append(

@@ -1,6 +1,8 @@
 import json
+import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -55,6 +57,9 @@ class TrackerTests(unittest.TestCase):
         saved = storage.load_products()[0]
         self.assertEqual(saved["last_price"], 100.0)
         self.assertTrue(saved["was_on_sale"])
+        self.assertEqual(
+            price_history.count_products_with_price_drops([product["url"]]), 0
+        )
 
     def test_successful_check_saves_product_image(self):
         product = {
@@ -122,10 +127,16 @@ class TrackerTests(unittest.TestCase):
 
     def test_history_statistics_ignore_failures(self):
         url = "https://www.amazon.sa/dp/B000000001"
-        price_history.record_price(url=url, name="Example", price=100.0)
-        price_history.record_price(url=url, name="Example", price=80.0)
+        run_id = "shared-run"
         price_history.record_price(
-            url=url, name="Example", price=None, scrape_status="failed"
+            url=url, name="Example", price=100.0, run_id=run_id
+        )
+        price_history.record_price(
+            url=url, name="Example", price=80.0, run_id=run_id
+        )
+        price_history.record_price(
+            url=url, name="Example", price=None, scrape_status="failed",
+            run_id=run_id,
         )
         stats = price_history.get_product_stats(url)
         self.assertEqual(stats["lowest_price"], 80.0)
@@ -147,12 +158,111 @@ class TrackerTests(unittest.TestCase):
     def test_price_drop_count_ignores_unchanged_and_increased_prices(self):
         unchanged_url = "https://www.amazon.sa/dp/B000000002"
         increased_url = "https://www.amazon.sa/dp/B000000003"
-        price_history.record_price(url=unchanged_url, name="Same", price=50.0)
-        price_history.record_price(url=unchanged_url, name="Same", price=50.0)
-        price_history.record_price(url=increased_url, name="Higher", price=20.0)
-        price_history.record_price(url=increased_url, name="Higher", price=30.0)
+        run_id = "unchanged-run"
+        price_history.record_price(
+            url=unchanged_url, name="Same", price=50.0, run_id=run_id
+        )
+        price_history.record_price(
+            url=unchanged_url, name="Same", price=50.0, run_id=run_id
+        )
+        price_history.record_price(
+            url=increased_url, name="Higher", price=20.0, run_id=run_id
+        )
+        price_history.record_price(
+            url=increased_url, name="Higher", price=30.0, run_id=run_id
+        )
 
         self.assertEqual(price_history.count_products_with_price_drops(), 0)
+
+    def test_telegram_and_dashboard_use_same_price_drop_event(self):
+        url = "https://www.amazon.sa/dp/B000000005"
+        product = {
+            "name": "Shared event product",
+            "url": url,
+            "last_price": 100.0,
+            "was_on_sale": False,
+        }
+        self.write_products([product])
+        product_info = {
+            "title": product["name"],
+            "price": "80.00 SAR",
+            "status": "success",
+            "is_on_sale": False,
+            "discount_text": None,
+            "original_price": None,
+            "image_url": None,
+        }
+        with patch.object(
+            price_checker, "get_product_info", return_value=product_info
+        ), patch.object(
+            price_checker, "create_run_id", return_value="unified-run"
+        ), patch.object(price_checker, "send_telegram_message") as send_message:
+            price_checker.check_prices()
+
+        send_message.assert_called_once()
+        rows = price_history.get_price_history(url)
+        self.assertTrue(rows[-1]["price_dropped"])
+        self.assertEqual(rows[-1]["previous_price"], 100.0)
+        self.assertEqual(rows[-1]["price_change"], -20.0)
+        self.assertEqual(
+            price_history.count_products_with_price_drops([url]), 1
+        )
+
+    def test_removed_products_are_not_counted(self):
+        active_url = "https://www.amazon.sa/dp/B000000006"
+        removed_url = "https://www.amazon.sa/dp/B000000007"
+        for url in (active_url, removed_url):
+            price_history.record_price(
+                url=url, name="Product", price=100.0, run_id="older-run"
+            )
+            price_history.record_price(
+                url=url, name="Product", price=80.0, run_id="latest-run"
+            )
+
+        self.assertEqual(
+            price_history.count_products_with_price_drops([active_url]), 1
+        )
+
+    def test_first_observation_does_not_create_false_events(self):
+        event = price_history.record_price(
+            url="https://www.amazon.sa/dp/B000000008",
+            name="First observation",
+            price=75.0,
+            is_on_sale=True,
+            run_id="first-run",
+        )
+
+        self.assertFalse(event["price_dropped"])
+        self.assertFalse(event["sale_started"])
+        self.assertIsNone(event["previous_price"])
+
+    def test_existing_database_migrates_event_columns(self):
+        with closing(sqlite3.connect(self.history_file)) as connection:
+            connection.execute(
+                """
+                CREATE TABLE price_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    url TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    price REAL,
+                    currency TEXT NOT NULL DEFAULT 'SAR',
+                    is_on_sale INTEGER NOT NULL DEFAULT 0,
+                    original_price REAL,
+                    scrape_status TEXT NOT NULL,
+                    checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            connection.commit()
+
+        price_history.initialize_history()
+        with closing(sqlite3.connect(self.history_file)) as connection:
+            columns = {
+                row[1]
+                for row in connection.execute("PRAGMA table_info(price_history)")
+            }
+
+        self.assertTrue(set(price_history.EVENT_COLUMNS).issubset(columns))
 
     def test_twenty_products_form_seven_dashboard_rows(self):
         products = list(range(20))

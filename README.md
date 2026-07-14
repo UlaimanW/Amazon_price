@@ -45,6 +45,8 @@ WISHLIST_URL=...
 - `products.json` keeps the latest valid state for each tracked product.
 - `price_history.db` is created automatically and records every successful or
   failed check with a timestamp.
+- Telegram alerts and the dashboard use the same recorded price-change event,
+  so their price-drop results remain consistent.
 - A failed scrape never replaces a product's last valid price.
 - An unexpectedly empty wishlist never erases existing tracked products.
 

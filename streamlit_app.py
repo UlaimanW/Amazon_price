@@ -134,7 +134,9 @@ if not products:
     st.stop()
 
 sale_count = sum(bool(product.get("was_on_sale")) for product in products)
-price_drop_count = count_products_with_price_drops()
+price_drop_count = count_products_with_price_drops(
+    product["url"] for product in products
+)
 
 metric_columns = st.columns(3)
 metric_columns[0].metric("Tracked products", len(products))
