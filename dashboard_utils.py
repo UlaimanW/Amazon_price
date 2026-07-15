@@ -8,17 +8,25 @@ def chunk_products(products, columns=3):
     ]
 
 
-def build_product_badges(product, price_drop_amount=None):
+def build_product_badges(product, price_change=None):
     badges = []
     if product_is_on_sale(product):
         discount_text = str(product.get("discount_text") or "").strip()
         label = f"SALE {discount_text}" if discount_text else "SALE"
         badges.append({"kind": "sale", "label": label})
 
-    if price_drop_amount is not None:
-        amount = float(price_drop_amount)
-        label = f"↓ {amount:,.2f} SAR" if amount > 0 else "PRICE DROP"
-        badges.append({"kind": "price-drop", "label": label})
+    if price_change is not None and float(price_change) < 0:
+        amount = abs(float(price_change))
+        badges.append({
+            "kind": "price-drop",
+            "label": f"↓ {amount:,.2f} SAR",
+        })
+    elif price_change is not None and float(price_change) > 0:
+        amount = float(price_change)
+        badges.append({
+            "kind": "price-increase",
+            "label": f"↑ {amount:,.2f} SAR",
+        })
 
     return badges
 

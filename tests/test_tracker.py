@@ -240,7 +240,7 @@ class TrackerTests(unittest.TestCase):
             "discount_text": "-25%",
         }
 
-        badges = build_product_badges(product, 12.5)
+        badges = build_product_badges(product, -12.5)
 
         self.assertEqual(badges, [
             {"kind": "sale", "label": "SALE -25%"},
@@ -255,6 +255,18 @@ class TrackerTests(unittest.TestCase):
         }
 
         self.assertEqual(build_product_badges(product), [])
+
+    def test_price_increase_uses_red_badge_data(self):
+        product = {
+            "last_price": 120.0,
+            "original_price": None,
+            "discount_text": None,
+        }
+
+        self.assertEqual(build_product_badges(product, 20.0), [{
+            "kind": "price-increase",
+            "label": "↑ 20.00 SAR",
+        }])
 
     def test_empty_wishlist_does_not_erase_products(self):
         product = {
@@ -484,6 +496,46 @@ class TrackerTests(unittest.TestCase):
         )
         self.assertEqual(
             price_history.get_latest_price_drop_events([url]), {url: 20.0}
+        )
+
+    def test_price_badge_persists_and_changes_direction(self):
+        url = "https://www.amazon.sa/dp/B000000015"
+        price_history.record_price(
+            url=url, name="Persistent badge", price=100.0, run_id="one"
+        )
+        price_history.record_price(
+            url=url, name="Persistent badge", price=80.0, run_id="two"
+        )
+        price_history.record_price(
+            url=url, name="Persistent badge", price=80.0, run_id="three"
+        )
+        price_history.record_price(
+            url=url, name="Persistent badge", price=None,
+            scrape_status="failed", run_id="four",
+        )
+
+        self.assertEqual(
+            price_history.get_latest_price_change_events([url]), {url: -20.0}
+        )
+
+        price_history.record_price(
+            url=url, name="Persistent badge", price=95.0, run_id="five"
+        )
+
+        self.assertEqual(
+            price_history.get_latest_price_change_events([url]), {url: 15.0}
+        )
+        self.assertEqual(price_history.count_products_with_price_drops([url]), 0)
+
+    def test_further_drop_updates_persistent_badge_amount(self):
+        url = "https://www.amazon.sa/dp/B000000016"
+        for run_id, price in [("one", 100.0), ("two", 80.0), ("three", 70.0)]:
+            price_history.record_price(
+                url=url, name="Further drop", price=price, run_id=run_id
+            )
+
+        self.assertEqual(
+            price_history.get_latest_price_change_events([url]), {url: -10.0}
         )
 
     def test_removed_products_are_not_counted(self):

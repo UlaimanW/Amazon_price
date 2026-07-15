@@ -13,7 +13,7 @@ from dashboard_utils import (
     filter_products,
 )
 from price_history import (
-    get_latest_price_drop_events,
+    get_latest_price_change_events,
     get_price_history,
     get_product_stats,
 )
@@ -54,6 +54,9 @@ st.markdown(
     }
     .product-badge.price-drop {
         color: #166534; background: #dcfce7; border: 1px solid #86efac;
+    }
+    .product-badge.price-increase {
+        color: #991b1b; background: #fee2e2; border: 1px solid #fca5a5;
     }
     .product-image-box {
         height: 210px; width: 100%; display: flex;
@@ -152,7 +155,7 @@ def sale_price_html(product):
     return price_line
 
 
-def product_card_html(product, price_drop_amount=None):
+def product_card_html(product, price_change=None):
     safe_name = html.escape(product["name"], quote=True)
     safe_product_url = html.escape(product["url"], quote=True)
     image_url = product.get("image_url")
@@ -165,7 +168,7 @@ def product_card_html(product, price_drop_amount=None):
     else:
         image_html = '<span class="image-placeholder">Image available after the next check.</span>'
 
-    badges = build_product_badges(product, price_drop_amount)
+    badges = build_product_badges(product, price_change)
     badges_html = "".join(
         f'<span class="product-badge {badge["kind"]}">'
         f'{html.escape(badge["label"])}</span>'
@@ -216,14 +219,15 @@ if not products:
     st.stop()
 
 sale_count = sum(product_is_on_sale(product) for product in products)
-price_drop_events = get_latest_price_drop_events(
+price_change_events = get_latest_price_change_events(
     product["url"] for product in products
 )
+price_drop_count = sum(change < 0 for change in price_change_events.values())
 
 metric_columns = st.columns(3)
 metric_columns[0].metric("Tracked products", len(products))
 metric_columns[1].metric("Currently on sale", sale_count)
-metric_columns[2].metric("Products with price drops", len(price_drop_events))
+metric_columns[2].metric("Products with price drops", price_drop_count)
 
 st.subheader("Products")
 
@@ -265,7 +269,7 @@ for product_row in chunk_products(visible_products):
         with column:
             st.markdown(
                 product_card_html(
-                    product, price_drop_events.get(product["url"])
+                    product, price_change_events.get(product["url"])
                 ),
                 unsafe_allow_html=True,
             )

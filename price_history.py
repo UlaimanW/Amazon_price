@@ -327,44 +327,42 @@ def get_tracker_health():
     }
 
 
-def get_latest_price_drop_events(active_urls=None):
+def get_latest_price_change_events(active_urls=None):
     initialize_history()
     with closing(sqlite3.connect(HISTORY_FILE)) as connection:
-        latest_run = connection.execute(
-            """
-            SELECT run_id
-            FROM price_history
-            WHERE run_id IS NOT NULL
-            ORDER BY id DESC
-            LIMIT 1
-            """
-        ).fetchone()
-        if not latest_run:
-            return {}
-
-        drop_events = {
-            row[0]: abs(row[1]) if row[1] is not None else None
-            for row in connection.execute(
+        rows = connection.execute(
                 """
                 SELECT url, price_change
                 FROM price_history
-                WHERE run_id = ? AND scrape_status = 'success'
-                  AND price_dropped = 1
-                ORDER BY id
-                """,
-                (latest_run[0],),
-            ).fetchall()
-        }
+                WHERE scrape_status = 'success'
+                  AND price_change IS NOT NULL
+                  AND price_change != 0
+                ORDER BY id DESC
+                """
+        ).fetchall()
+
+    change_events = {}
+    for url, price_change in rows:
+        if url not in change_events:
+            change_events[url] = float(price_change)
 
     if active_urls is not None:
         active_urls = set(active_urls)
-        drop_events = {
-            url: amount
-            for url, amount in drop_events.items()
+        change_events = {
+            url: change
+            for url, change in change_events.items()
             if url in active_urls
         }
 
-    return drop_events
+    return change_events
+
+
+def get_latest_price_drop_events(active_urls=None):
+    return {
+        url: abs(change)
+        for url, change in get_latest_price_change_events(active_urls).items()
+        if change < 0
+    }
 
 
 def get_products_with_price_drops(active_urls=None):
