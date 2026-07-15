@@ -35,12 +35,14 @@ def list_products():
     print("\n" + "=" * 70)
 
 
-def run_tracker():
+def run_tracker(raise_errors=False):
     try:
         validate_config()
     except ValueError as error:
+        if raise_errors:
+            raise
         print(error)
-        return
+        return False
 
     print("\nStarting wishlist synchronization...\n")
     sync_wishlist(WISHLIST_URL)
@@ -49,6 +51,7 @@ def run_tracker():
     check_prices()
 
     print("\nTracker run completed.")
+    return True
 
 
 def main():

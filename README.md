@@ -37,6 +37,10 @@ Start the read-only dashboard with:
 streamlit run streamlit_app.py
 ```
 
+The private dashboard includes a **Run tracker now** button that performs the
+same wishlist synchronization and price check as `python app.py run`, including
+normal Telegram alerts.
+
 It shows compact product cards in a responsive three-column grid with names,
 pictures, current sale status, Amazon links, historical price charts, and
 lowest/highest/average prices. The history chart marks price drops, price

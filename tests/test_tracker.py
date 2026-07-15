@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 from bs4 import BeautifulSoup
 
+import app as tracker_app
 import price_history
 import price_checker
 import scraper
@@ -54,6 +55,30 @@ class TrackerTests(unittest.TestCase):
         )
         response.raise_for_status.return_value = None
         return response
+
+    def test_run_tracker_uses_same_complete_workflow(self):
+        with patch.object(tracker_app, "validate_config") as validate, \
+                patch.object(tracker_app, "sync_wishlist") as sync, \
+                patch.object(tracker_app, "check_prices") as check:
+            result = tracker_app.run_tracker(raise_errors=True)
+
+        self.assertTrue(result)
+        validate.assert_called_once_with()
+        sync.assert_called_once_with(tracker_app.WISHLIST_URL)
+        check.assert_called_once_with()
+
+    def test_dashboard_tracker_run_can_surface_configuration_error(self):
+        with patch.object(
+            tracker_app,
+            "validate_config",
+            side_effect=ValueError("Missing configuration"),
+        ), patch.object(tracker_app, "sync_wishlist") as sync, \
+                patch.object(tracker_app, "check_prices") as check:
+            with self.assertRaisesRegex(ValueError, "Missing configuration"):
+                tracker_app.run_tracker(raise_errors=True)
+
+        sync.assert_not_called()
+        check.assert_not_called()
 
     def test_failed_scrape_keeps_last_valid_price(self):
         product = {

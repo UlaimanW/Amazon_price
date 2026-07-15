@@ -4,6 +4,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from app import run_tracker
 from dashboard_utils import (
     EVENT_DETAILS,
     build_price_timeline,
@@ -86,7 +87,10 @@ st.markdown(
         text-align: center; text-decoration: none !important;
     }
     .amazon-button:hover {border-color: #f59e0b; color: #92400e !important;}
-    div[data-testid="stButton"] {margin-top: 1.75rem;}
+    div[data-testid="stButton"] {margin-top: 0;}
+    .st-key-clear_filters_button div[data-testid="stButton"] {
+        margin-top: 1.75rem;
+    }
     div[data-testid="stButton"] > button {
         min-height: 3rem;
         padding: 0.45rem 0.9rem;
@@ -182,10 +186,30 @@ def product_card_html(product, price_drop_amount=None):
     )
 
 
-products = load_products()
-
 st.title("Amazon Wishlist Price Tracker")
 st.caption("Current prices and historical trends in one place.")
+
+if "tracker_running" not in st.session_state:
+    st.session_state.tracker_running = False
+
+run_now = st.button(
+    "Run tracker now",
+    key="run_tracker_button",
+    disabled=st.session_state.tracker_running,
+)
+if run_now and not st.session_state.tracker_running:
+    st.session_state.tracker_running = True
+    try:
+        with st.spinner("Synchronizing the wishlist and checking prices..."):
+            run_tracker(raise_errors=True)
+    except Exception as error:
+        st.error(f"Tracker run failed: {error}")
+    else:
+        st.success("Tracker completed successfully. Dashboard data is updated.")
+    finally:
+        st.session_state.tracker_running = False
+
+products = load_products()
 
 if not products:
     st.info("No products are currently tracked. Run the wishlist sync first.")
@@ -223,7 +247,9 @@ sort_by = filter_columns[1].selectbox(
     key="product_sort",
 )
 filter_columns[2].button(
-    "↻ Clear filters", on_click=clear_product_filters
+    "↻ Clear filters",
+    key="clear_filters_button",
+    on_click=clear_product_filters,
 )
 
 visible_products = filter_products(
