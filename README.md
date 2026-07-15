@@ -4,6 +4,14 @@ Tracks products from an Amazon Saudi Arabia wishlist, compares prices, records
 price history, and sends Telegram alerts for price drops and newly detected
 sales. GitHub Actions runs the tracker daily.
 
+Telegram also alerts when products return to stock or become unavailable. A
+sale-ending alert is sent only after two consecutive successful checks confirm
+that the sale is gone.
+
+Wishlist synchronization follows Amazon pagination, deduplicates products, and
+keeps the existing tracked list when a page fails, repeats, is blocked, points
+outside Amazon Saudi Arabia, or returns a suspiciously small product set.
+
 ## Commands
 
 ```text
@@ -27,8 +35,11 @@ streamlit run streamlit_app.py
 
 It shows compact product cards in a responsive three-column grid with names,
 pictures, current sale status, Amazon links, historical price charts, and
-lowest/highest/average prices. The dashboard reads the same `products.json`
-and `price_history.db` used by the scheduled tracker.
+lowest/highest/average prices. The history chart marks price drops, price
+increases, sale starts, and confirmed sale endings. A table below the chart
+lists the same events and price changes. The dashboard reads the same
+`products.json` and `price_history.db` used by the scheduled tracker.
+The product grid can be searched and sorted by name, price, or discount.
 
 ## Configuration
 

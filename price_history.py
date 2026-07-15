@@ -12,6 +12,14 @@ EVENT_COLUMNS = {
     "price_change": "REAL",
     "price_dropped": "INTEGER NOT NULL DEFAULT 0",
     "sale_started": "INTEGER NOT NULL DEFAULT 0",
+    "sale_end_streak": "INTEGER NOT NULL DEFAULT 0",
+    "sale_ended": "INTEGER NOT NULL DEFAULT 0",
+    "previous_sale_price": "REAL",
+    "availability": "TEXT NOT NULL DEFAULT 'unknown'",
+    "previous_availability": "TEXT",
+    "availability_changed": "INTEGER NOT NULL DEFAULT 0",
+    "back_in_stock": "INTEGER NOT NULL DEFAULT 0",
+    "became_unavailable": "INTEGER NOT NULL DEFAULT 0",
 }
 
 
@@ -33,6 +41,14 @@ def initialize_history():
                 price_change REAL,
                 price_dropped INTEGER NOT NULL DEFAULT 0,
                 sale_started INTEGER NOT NULL DEFAULT 0,
+                sale_end_streak INTEGER NOT NULL DEFAULT 0,
+                sale_ended INTEGER NOT NULL DEFAULT 0,
+                previous_sale_price REAL,
+                availability TEXT NOT NULL DEFAULT 'unknown',
+                previous_availability TEXT,
+                availability_changed INTEGER NOT NULL DEFAULT 0,
+                back_in_stock INTEGER NOT NULL DEFAULT 0,
+                became_unavailable INTEGER NOT NULL DEFAULT 0,
                 checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """
@@ -65,7 +81,7 @@ def get_latest_successful_observation(url):
         connection.row_factory = sqlite3.Row
         row = connection.execute(
             """
-            SELECT price, is_on_sale, checked_at
+            SELECT price, is_on_sale, sale_end_streak, checked_at
             FROM price_history
             WHERE url = ? AND scrape_status = 'success' AND price IS NOT NULL
             ORDER BY id DESC
@@ -77,10 +93,50 @@ def get_latest_successful_observation(url):
     return dict(row) if row else None
 
 
+def get_latest_availability_observation(url):
+    initialize_history()
+    with closing(sqlite3.connect(HISTORY_FILE)) as connection:
+        row = connection.execute(
+            """
+            SELECT availability
+            FROM price_history
+            WHERE url = ? AND availability IS NOT NULL
+              AND availability != 'unknown'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (url,),
+        ).fetchone()
+
+    return row[0] if row else None
+
+
+def get_latest_sale_price(url):
+    initialize_history()
+    with closing(sqlite3.connect(HISTORY_FILE)) as connection:
+        row = connection.execute(
+            """
+            SELECT price
+            FROM price_history
+            WHERE url = ? AND scrape_status = 'success'
+              AND price IS NOT NULL AND is_on_sale = 1
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (url,),
+        ).fetchone()
+
+    return row[0] if row else None
+
+
 def record_price(
     *, url, name, price, is_on_sale=False, original_price=None,
     scrape_status="success", run_id=None, previous_price=None,
-    previous_on_sale=None, price_dropped=None, sale_started=None
+    previous_on_sale=None, price_dropped=None, sale_started=None,
+    sale_end_streak=None, sale_ended=None, previous_sale_price=None,
+    availability="unknown", previous_availability=None,
+    availability_changed=None, back_in_stock=None,
+    became_unavailable=None
 ):
     initialize_history()
 
@@ -107,10 +163,64 @@ def record_price(
         price_change = (
             price - previous_price if previous_price is not None else None
         )
+
+        if is_on_sale:
+            sale_end_streak = 0
+            sale_ended = False
+            previous_sale_price = None
+        elif latest:
+            latest_streak = latest.get("sale_end_streak") or 0
+            if bool(latest["is_on_sale"]):
+                sale_end_streak = 1
+            elif latest_streak > 0:
+                sale_end_streak = latest_streak + 1
+            else:
+                sale_end_streak = 0
+
+            sale_ended = sale_end_streak == 2
+            if sale_end_streak > 0 and previous_sale_price is None:
+                previous_sale_price = get_latest_sale_price(url)
+        elif previous_on_sale:
+            sale_end_streak = 1
+            sale_ended = False
+            previous_sale_price = previous_price
+        else:
+            sale_end_streak = 0
+            sale_ended = False
+            previous_sale_price = None
     else:
         price_change = None
         price_dropped = False
         sale_started = False
+        sale_end_streak = 0
+        sale_ended = False
+        previous_sale_price = None
+
+    availability = availability or "unknown"
+    if previous_availability is None:
+        previous_availability = get_latest_availability_observation(url)
+
+    known_previous = previous_availability not in {None, "unknown"}
+    known_current = availability != "unknown"
+    if availability_changed is None:
+        availability_changed = (
+            known_previous
+            and known_current
+            and previous_availability != availability
+        )
+
+    available_states = {"in_stock", "available_from_other_sellers"}
+    unavailable_states = {"out_of_stock", "temporarily_unavailable"}
+    if back_in_stock is None:
+        back_in_stock = (
+            previous_availability in unavailable_states
+            and availability in available_states
+        )
+    if became_unavailable is None:
+        became_unavailable = (
+            previous_availability in available_states
+            and availability in unavailable_states
+        )
 
     with closing(sqlite3.connect(HISTORY_FILE)) as connection:
         connection.execute(
@@ -118,12 +228,18 @@ def record_price(
             INSERT INTO price_history (
                 url, name, price, is_on_sale, original_price, scrape_status,
                 run_id, previous_price, price_change, price_dropped, sale_started
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                , sale_end_streak, sale_ended, previous_sale_price
+                , availability, previous_availability, availability_changed,
+                back_in_stock, became_unavailable
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 url, name, price, int(is_on_sale), original_price, scrape_status,
                 run_id, previous_price, price_change, int(price_dropped),
-                int(sale_started),
+                int(sale_started), sale_end_streak, int(sale_ended),
+                previous_sale_price, availability, previous_availability,
+                int(availability_changed), int(back_in_stock),
+                int(became_unavailable),
             ),
         )
         connection.commit()
@@ -135,6 +251,14 @@ def record_price(
         "price_change": price_change,
         "price_dropped": bool(price_dropped),
         "sale_started": bool(sale_started),
+        "sale_end_streak": sale_end_streak,
+        "sale_ended": bool(sale_ended),
+        "previous_sale_price": previous_sale_price,
+        "availability": availability,
+        "previous_availability": previous_availability,
+        "availability_changed": bool(availability_changed),
+        "back_in_stock": bool(back_in_stock),
+        "became_unavailable": bool(became_unavailable),
     }
 
 
@@ -166,7 +290,10 @@ def get_price_history(url):
             """
             SELECT price, is_on_sale, original_price, scrape_status,
                    run_id, previous_price, price_change, price_dropped,
-                   sale_started, checked_at
+                   sale_started, sale_end_streak, sale_ended,
+                   previous_sale_price, availability, previous_availability,
+                   availability_changed, back_in_stock,
+                   became_unavailable, checked_at
             FROM price_history
             WHERE url = ?
             ORDER BY checked_at, id
@@ -200,7 +327,7 @@ def get_tracker_health():
     }
 
 
-def count_products_with_price_drops(active_urls=None):
+def get_products_with_price_drops(active_urls=None):
     initialize_history()
     with closing(sqlite3.connect(HISTORY_FILE)) as connection:
         latest_run = connection.execute(
@@ -213,7 +340,7 @@ def count_products_with_price_drops(active_urls=None):
             """
         ).fetchone()
         if not latest_run:
-            return 0
+            return set()
 
         dropped_urls = {
             row[0] for row in connection.execute(
@@ -230,4 +357,8 @@ def count_products_with_price_drops(active_urls=None):
     if active_urls is not None:
         dropped_urls &= set(active_urls)
 
-    return len(dropped_urls)
+    return dropped_urls
+
+
+def count_products_with_price_drops(active_urls=None):
+    return len(get_products_with_price_drops(active_urls))

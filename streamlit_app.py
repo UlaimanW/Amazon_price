@@ -1,13 +1,19 @@
 import html
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
-from dashboard_utils import chunk_products
+from dashboard_utils import (
+    EVENT_DETAILS,
+    build_price_timeline,
+    chunk_products,
+    filter_products,
+)
 from price_history import (
-    count_products_with_price_drops,
     get_price_history,
     get_product_stats,
+    get_products_with_price_drops,
 )
 from storage import load_products
 
@@ -62,6 +68,32 @@ st.markdown(
         text-align: center; text-decoration: none !important;
     }
     .amazon-button:hover {border-color: #f59e0b; color: #92400e !important;}
+    div[data-testid="stButton"] {margin-top: 1.75rem;}
+    div[data-testid="stButton"] > button {
+        min-height: 3rem;
+        padding: 0.45rem 0.9rem;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: #f0f2f6;
+        color: #31333f;
+        font-size: 0.9rem;
+        font-weight: 600;
+        box-shadow: none;
+        transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    div[data-testid="stButton"] > button p {color: #31333f;}
+    div[data-testid="stButton"] > button:hover {
+        border-color: #d1d5db;
+        background: #e6e9ef;
+        color: #31333f;
+        box-shadow: none;
+    }
+    div[data-testid="stButton"] > button:hover p {color: #31333f;}
+    div[data-testid="stButton"] > button:focus:not(:active) {
+        border-color: #9ca3af;
+        color: #31333f;
+        box-shadow: 0 0 0 2px rgba(156, 163, 175, 0.20);
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -134,21 +166,55 @@ if not products:
     st.stop()
 
 sale_count = sum(bool(product.get("was_on_sale")) for product in products)
-price_drop_count = count_products_with_price_drops(
+price_drop_urls = get_products_with_price_drops(
     product["url"] for product in products
 )
 
 metric_columns = st.columns(3)
 metric_columns[0].metric("Tracked products", len(products))
 metric_columns[1].metric("Currently on sale", sale_count)
-metric_columns[2].metric("Products with price drops", price_drop_count)
+metric_columns[2].metric("Products with price drops", len(price_drop_urls))
 
 st.subheader("Products")
-for product_row in chunk_products(products):
+
+
+def clear_product_filters():
+    st.session_state.product_search = ""
+    st.session_state.product_sort = "Name"
+
+filter_columns = st.columns([3, 2, 1])
+search = filter_columns[0].text_input(
+    "Search products", placeholder="Product name", key="product_search"
+)
+sort_by = filter_columns[1].selectbox(
+    "Sort by",
+    [
+        "Name",
+        "Price: lowest first",
+        "Price: highest first",
+        "Largest discount",
+    ],
+    key="product_sort",
+)
+filter_columns[2].button(
+    "↻ Clear filters", on_click=clear_product_filters
+)
+
+visible_products = filter_products(
+    products,
+    search=search,
+    sort_by=sort_by,
+)
+st.caption(f"Showing {len(visible_products)} of {len(products)} products.")
+
+for product_row in chunk_products(visible_products):
     product_columns = st.columns(3)
     for column, product in zip(product_columns, product_row):
         with column:
             st.markdown(product_card_html(product), unsafe_allow_html=True)
+
+if not visible_products:
+    st.info("No products match the selected filters.")
 
 st.subheader("Product history")
 selected_index = st.selectbox(
@@ -166,14 +232,78 @@ detail_columns[1].metric("Lowest", money(stats["lowest_price"]))
 detail_columns[2].metric("Highest", money(stats["highest_price"]))
 detail_columns[3].metric("Average", money(stats["average_price"]))
 
-successful_rows = [
-    row for row in history_rows
-    if row["scrape_status"] == "success" and row["price"] is not None
-]
-if successful_rows:
-    chart_data = pd.DataFrame(successful_rows)
+observations, timeline_events = build_price_timeline(history_rows)
+if observations:
+    chart_data = pd.DataFrame(observations)
     chart_data["checked_at"] = pd.to_datetime(chart_data["checked_at"], utc=True)
-    chart_data = chart_data.set_index("checked_at")
-    st.line_chart(chart_data[["price"]], y_label="Price (SAR)", x_label="Checked at")
+
+    price_line = alt.Chart(chart_data).mark_line(
+        color="#1677d2", strokeWidth=3
+    ).encode(
+        x=alt.X("checked_at:T", title="Checked at"),
+        y=alt.Y("price:Q", title="Price (SAR)", scale=alt.Scale(zero=False)),
+        tooltip=[
+            alt.Tooltip("checked_at:T", title="Checked at"),
+            alt.Tooltip("price:Q", title="Price", format=",.2f"),
+        ],
+    )
+
+    chart_layers = [price_line]
+    if timeline_events:
+        event_data = pd.DataFrame(timeline_events)
+        event_data["checked_at"] = pd.to_datetime(
+            event_data["checked_at"], utc=True
+        )
+        event_colors = [
+            EVENT_DETAILS[event]["color"] for event in EVENT_DETAILS
+        ]
+        event_markers = alt.Chart(event_data).mark_point(
+            filled=True, size=120, stroke="white", strokeWidth=1
+        ).encode(
+            x="checked_at:T",
+            y="price:Q",
+            color=alt.Color(
+                "event:N",
+                title="Event",
+                scale=alt.Scale(
+                    domain=list(EVENT_DETAILS), range=event_colors
+                ),
+            ),
+            tooltip=[
+                alt.Tooltip("event:N", title="Event"),
+                alt.Tooltip("checked_at:T", title="Checked at"),
+                alt.Tooltip("previous_price:Q", title="Previous", format=",.2f"),
+                alt.Tooltip("price:Q", title="Current", format=",.2f"),
+                alt.Tooltip("price_change:Q", title="Change", format="+,.2f"),
+            ],
+        )
+        chart_layers.append(event_markers)
+
+    timeline_chart = alt.layer(*chart_layers).properties(height=360)
+    st.altair_chart(timeline_chart, width="stretch")
+
+    st.markdown("#### Price and sale events")
+    if timeline_events:
+        event_table = pd.DataFrame(timeline_events).sort_values(
+            ["checked_at", "event_order"], ascending=[False, True]
+        )
+        event_table["Date"] = pd.to_datetime(
+            event_table["checked_at"], utc=True
+        ).dt.strftime("%Y-%m-%d %H:%M UTC")
+        event_table["Event"] = event_table["event"]
+        event_table["Previous price"] = event_table["previous_price"].map(money)
+        event_table["Current price"] = event_table["price"].map(money)
+        event_table["Change"] = event_table["price_change"].map(
+            lambda value: "—" if value is None else f"{value:+,.2f} SAR"
+        )
+        st.dataframe(
+            event_table[
+                ["Date", "Event", "Previous price", "Current price", "Change"]
+            ],
+            hide_index=True,
+            width="stretch",
+        )
+    else:
+        st.info("No price or sale changes have been recorded for this product yet.")
 else:
     st.info("Price history will appear after the next successful tracker run.")

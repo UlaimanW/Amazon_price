@@ -60,6 +60,57 @@ def detect_product_image(soup):
     return None
 
 
+def detect_availability(soup):
+    availability_selectors = [
+        "#availability",
+        "#availabilityInsideBuyBox_feature_div",
+        "#outOfStock",
+        "#merchant-info",
+    ]
+    availability_text = " ".join(
+        element.get_text(" ", strip=True).lower()
+        for selector in availability_selectors
+        for element in soup.select(selector)
+    )
+
+    temporarily_unavailable = [
+        "temporarily out of stock",
+        "temporarily unavailable",
+        "غير متوفر مؤقتاً",
+        "غير متاح مؤقتاً",
+    ]
+    out_of_stock = [
+        "currently unavailable",
+        "out of stock",
+        "غير متوفر حالياً",
+        "نفد من المخزون",
+    ]
+    other_sellers = [
+        "available from these sellers",
+        "see all buying options",
+        "متوفر لدى هؤلاء البائعين",
+        "عرض كل خيارات الشراء",
+    ]
+    in_stock = [
+        "in stock",
+        "متوفر",
+        "متاح",
+    ]
+
+    if any(text in availability_text for text in temporarily_unavailable):
+        return "temporarily_unavailable"
+    if any(text in availability_text for text in out_of_stock):
+        return "out_of_stock"
+    if any(text in availability_text for text in other_sellers):
+        return "available_from_other_sellers"
+    if any(text in availability_text for text in in_stock):
+        return "in_stock"
+    if soup.select_one("#add-to-cart-button, #buy-now-button"):
+        return "in_stock"
+
+    return "unknown"
+
+
 def detect_discount_text(soup):
     discount_selectors = [
         "span.savingsPercentage",
@@ -185,8 +236,37 @@ def get_product_info(url, max_attempts=6):
             print("HTML length:", len(response.text))
             print(f"Attempt: {attempt}/{max_attempts}")
 
+            soup = BeautifulSoup(
+                response.text,
+                "html.parser"
+            )
+            title_tag = soup.find(id="productTitle")
+            title = (
+                title_tag.get_text(strip=True)
+                if title_tag
+                else "Title not found"
+            )
+            availability = detect_availability(soup)
+
             if len(response.text) < 100000:
                 print("Amazon returned a small page.")
+
+                if availability in {
+                    "out_of_stock",
+                    "temporarily_unavailable",
+                    "available_from_other_sellers",
+                }:
+                    return {
+                        "title": title,
+                        "price": "Price not found",
+                        "status": "availability_only",
+                        "availability": availability,
+                        "image_url": detect_product_image(soup),
+                        "is_on_sale": False,
+                        "discount_text": None,
+                        "original_price": None,
+                        "url": response.url,
+                    }
 
                 if attempt < max_attempts:
                     wait_time = attempt * 3
@@ -199,19 +279,6 @@ def get_product_info(url, max_attempts=6):
                     time.sleep(wait_time)
 
                 continue
-
-            soup = BeautifulSoup(
-                response.text,
-                "html.parser"
-            )
-
-            title_tag = soup.find(id="productTitle")
-
-            title = (
-                title_tag.get_text(strip=True)
-                if title_tag
-                else "Title not found"
-            )
 
             price_selectors = [
                 "#corePrice_feature_div "
@@ -237,6 +304,23 @@ def get_product_info(url, max_attempts=6):
 
             if price_text is None:
                 print("Price was not found in the page.")
+
+                if availability in {
+                    "out_of_stock",
+                    "temporarily_unavailable",
+                    "available_from_other_sellers",
+                }:
+                    return {
+                        "title": title,
+                        "price": "Price not found",
+                        "status": "availability_only",
+                        "availability": availability,
+                        "image_url": detect_product_image(soup),
+                        "is_on_sale": False,
+                        "discount_text": None,
+                        "original_price": None,
+                        "url": response.url,
+                    }
 
                 if attempt < max_attempts:
                     wait_time = attempt * 3
@@ -294,6 +378,7 @@ def get_product_info(url, max_attempts=6):
                 "title": title,
                 "price": price_text,
                 "status": "success",
+                "availability": availability,
                 "image_url": detect_product_image(soup),
                 "is_on_sale": is_on_sale,
                 "discount_text": discount_text,
@@ -344,6 +429,7 @@ def get_product_info(url, max_attempts=6):
         "title": "Title not found",
         "price": "Price not found",
         "status": "failed",
+        "availability": "unknown",
         "image_url": None,
         "is_on_sale": False,
         "discount_text": None,

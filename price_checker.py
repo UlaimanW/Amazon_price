@@ -1,6 +1,7 @@
 from notifier import send_telegram_message
 from price_history import (
     create_run_id,
+    get_latest_availability_observation,
     get_latest_successful_observation,
     record_price,
 )
@@ -13,6 +14,17 @@ def shorten_name(name, max_length=70):
         return name
 
     return name[:max_length].rstrip() + "..."
+
+
+def availability_label(status):
+    return {
+        "in_stock": "In stock",
+        "out_of_stock": "Out of stock",
+        "temporarily_unavailable": "Temporarily unavailable",
+        "available_from_other_sellers": "Available from other sellers",
+        "unknown": "Unknown",
+        None: "Unknown",
+    }.get(status, "Unknown")
 
 
 def check_prices():
@@ -33,6 +45,11 @@ def check_prices():
             previous_price = float(product["last_price"])
             previously_on_sale = product.get("was_on_sale", False)
 
+        previous_availability = (
+            get_latest_availability_observation(url)
+            or product.get("availability")
+        )
+
         print(f"\nChecking: {name}")
 
         product_info = get_product_info(url)
@@ -43,11 +60,57 @@ def check_prices():
         discount_text = product_info.get("discount_text")
         original_price = product_info.get("original_price")
         image_url = product_info.get("image_url")
+        availability = product_info.get("availability", "unknown")
 
         print("Current price:", current_price_text)
         print("Last price:", previous_price)
         print("Previously on sale:", previously_on_sale)
         print("Currently on sale:", is_on_sale)
+        print("Availability:", availability)
+
+        if scrape_status == "availability_only":
+            availability_event = record_price(
+                url=url,
+                name=name,
+                price=None,
+                scrape_status="availability_only",
+                run_id=run_id,
+                availability=availability,
+                previous_availability=previous_availability,
+            )
+            product["availability"] = availability
+            if image_url:
+                product["image_url"] = image_url
+
+            if availability_event["back_in_stock"]:
+                send_telegram_message(
+                    "\n".join([
+                        "📦 Amazon Price Tracker",
+                        "",
+                        f"✅ Back in stock: {short_name}",
+                        "",
+                        f"📊 Previous status: "
+                        f"{availability_label(previous_availability)}",
+                        f"✅ Current status: {availability_label(availability)}",
+                        "",
+                        f"🔗 {url}",
+                    ])
+                )
+            elif availability_event["became_unavailable"]:
+                send_telegram_message(
+                    "\n".join([
+                        "📦 Amazon Price Tracker",
+                        "",
+                        f"⚠️ Product became unavailable: {short_name}",
+                        "",
+                        f"📊 Previous status: "
+                        f"{availability_label(previous_availability)}",
+                        f"❌ Current status: {availability_label(availability)}",
+                        "",
+                        f"🔗 {url}",
+                    ])
+                )
+            continue
 
         if (
             scrape_status != "success"
@@ -58,7 +121,8 @@ def check_prices():
             print("Could not get price; keeping the last valid price.")
             record_price(
                 url=url, name=name, price=None, scrape_status="failed",
-                run_id=run_id,
+                run_id=run_id, availability=availability,
+                previous_availability=previous_availability,
             )
             continue
 
@@ -69,6 +133,8 @@ def check_prices():
             record_price(
                 url=url, name=name, price=None,
                 scrape_status="invalid_price", run_id=run_id,
+                availability=availability,
+                previous_availability=previous_availability,
             )
             continue
 
@@ -86,12 +152,23 @@ def check_prices():
             previous_on_sale=previously_on_sale,
             price_dropped=price_dropped,
             sale_started=sale_started,
+            availability=availability,
+            previous_availability=previous_availability,
         )
 
         price_dropped = price_event["price_dropped"]
         sale_started = price_event["sale_started"]
+        sale_ended = price_event["sale_ended"]
+        back_in_stock = price_event["back_in_stock"]
+        became_unavailable = price_event["became_unavailable"]
 
-        if price_dropped or sale_started:
+        if (
+            price_dropped
+            or sale_started
+            or sale_ended
+            or back_in_stock
+            or became_unavailable
+        ):
             alert_reasons = []
 
             if price_dropped:
@@ -99,6 +176,15 @@ def check_prices():
 
             if sale_started:
                 alert_reasons.append("🔥 Sale started")
+
+            if sale_ended:
+                alert_reasons.append("⚠️ Sale ended")
+
+            if back_in_stock:
+                alert_reasons.append("✅ Back in stock")
+
+            if became_unavailable:
+                alert_reasons.append("⚠️ Product became unavailable")
 
             message_lines = [
                 "🛒 Amazon Price Tracker",
@@ -109,6 +195,13 @@ def check_prices():
                 "",
                 f"💰 Current price: {current_price:.2f} SAR",
             ]
+
+            if back_in_stock or became_unavailable:
+                message_lines.extend([
+                    f"📊 Previous status: "
+                    f"{availability_label(previous_availability)}",
+                    f"📦 Current status: {availability_label(availability)}",
+                ])
 
             if price_dropped:
                 price_drop_savings = previous_price - current_price
@@ -121,6 +214,17 @@ def check_prices():
                     f"💵 Price drop savings: "
                     f"{price_drop_savings:.2f} SAR"
                 )
+
+            if sale_ended and price_event["previous_sale_price"] is not None:
+                previous_sale_price = price_event["previous_sale_price"]
+                message_lines.append(
+                    f"🏷️ Previous sale price: {previous_sale_price:.2f} SAR"
+                )
+                sale_end_increase = current_price - previous_sale_price
+                if sale_end_increase > 0:
+                    message_lines.append(
+                        f"📈 Price increased by: {sale_end_increase:.2f} SAR"
+                    )
 
             if original_price is not None:
                 total_savings = original_price - current_price
@@ -150,19 +254,7 @@ def check_prices():
 
             send_telegram_message(message)
 
-            if price_dropped and sale_started:
-                print(
-                    "Telegram alert sent for price drop "
-                    "and new sale."
-                )
-            elif price_dropped:
-                print(
-                    "Telegram alert sent for price drop."
-                )
-            else:
-                print(
-                    "Telegram alert sent for new sale."
-                )
+            print("Telegram alert sent.")
 
         else:
             print(
@@ -173,6 +265,7 @@ def check_prices():
         product["was_on_sale"] = is_on_sale
         product["original_price"] = original_price
         product["discount_text"] = discount_text
+        product["availability"] = availability
         if image_url:
             product["image_url"] = image_url
 

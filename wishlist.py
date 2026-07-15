@@ -1,4 +1,6 @@
 import re
+from dataclasses import dataclass
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -6,6 +8,14 @@ from bs4 import BeautifulSoup
 from constants import HEADERS
 from scraper import get_product_info, parse_price
 from storage import load_products, replace_products
+
+
+@dataclass
+class WishlistResult:
+    links: list
+    complete: bool
+    pages: int
+    error: str = None
 
 
 def normalize_product_url(url):
@@ -19,48 +29,122 @@ def normalize_product_url(url):
     return f"https://www.amazon.sa/dp/{asin}"
 
 
-def get_wishlist_links(url):
-    response = requests.get(
-        url,
-        headers=HEADERS,
-        timeout=15
+def is_safe_amazon_url(url):
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    return (
+        parsed.scheme in {"http", "https"}
+        and (hostname == "amazon.sa" or hostname.endswith(".amazon.sa"))
     )
 
-    response.raise_for_status()
 
-    print("Status Code:", response.status_code)
-    print("HTML Length:", len(response.text))
-
-    soup = BeautifulSoup(
-        response.text,
-        "html.parser"
+def is_blocked_wishlist_page(soup):
+    title = soup.title.get_text(" ", strip=True).lower() if soup.title else ""
+    return (
+        "robot check" in title
+        or soup.select_one("#captchacharacters") is not None
+        or soup.select_one("form[action*='validateCaptcha']") is not None
     )
 
+
+def find_next_page_url(soup, current_url):
+    selectors = [
+        "li.a-last a[href]",
+        "a[aria-label='Next'][href]",
+        "a[aria-label='التالي'][href]",
+        "a[data-action='next-page'][href]",
+    ]
+    for selector in selectors:
+        next_link = soup.select_one(selector)
+        if next_link:
+            return urljoin(current_url, next_link["href"])
+    return None
+
+
+def get_wishlist_links(url, max_pages=20):
+    current_url = url
+    visited_pages = set()
     links = []
+    pages_read = 0
 
-    for tag in soup.find_all("a", href=True):
-        href = tag["href"]
+    while current_url:
+        if current_url in visited_pages:
+            return WishlistResult(
+                links, False, pages_read, "Pagination loop detected"
+            )
+        if not is_safe_amazon_url(current_url):
+            return WishlistResult(
+                links, False, pages_read, "Unsafe pagination URL"
+            )
 
-        if "/dp/" not in href:
-            continue
+        visited_pages.add(current_url)
+        try:
+            response = requests.get(
+                current_url,
+                headers=HEADERS,
+                timeout=15,
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as error:
+            return WishlistResult(
+                links, False, pages_read,
+                f"Wishlist page request failed: {error}",
+            )
 
-        normalized_url = normalize_product_url(href)
+        soup = BeautifulSoup(response.text, "html.parser")
+        pages_read += 1
 
-        if normalized_url and normalized_url not in links:
-            links.append(normalized_url)
+        if is_blocked_wishlist_page(soup):
+            return WishlistResult(
+                links, False, pages_read, "Amazon returned a CAPTCHA page"
+            )
 
-    return links
+        page_links = []
+        for tag in soup.find_all("a", href=True):
+            href = tag["href"]
+            if "/dp/" not in href:
+                continue
+            normalized_url = normalize_product_url(href)
+            if normalized_url and normalized_url not in page_links:
+                page_links.append(normalized_url)
+            if normalized_url and normalized_url not in links:
+                links.append(normalized_url)
+
+        print(f"Wishlist page {pages_read}: {len(page_links)} products")
+
+        next_url = find_next_page_url(soup, response.url or current_url)
+        if next_url is None:
+            return WishlistResult(links, True, pages_read)
+        if next_url in visited_pages:
+            return WishlistResult(
+                links, False, pages_read, "Pagination loop detected"
+            )
+        if not is_safe_amazon_url(next_url):
+            return WishlistResult(
+                links, False, pages_read, "Unsafe pagination URL"
+            )
+        if pages_read >= max_pages:
+            return WishlistResult(
+                links, False, pages_read, "Maximum wishlist pages reached"
+            )
+
+        current_url = next_url
+
+    return WishlistResult(links, True, pages_read)
 
 
 def sync_wishlist(wishlist_url):
     print("Reading Amazon wishlist...\n")
 
-    try:
-        links = get_wishlist_links(wishlist_url)
+    result = get_wishlist_links(wishlist_url)
+    links = result.links
 
-    except requests.exceptions.RequestException as error:
-        print(f"Could not read the Amazon wishlist: {error}")
-        return
+    if not result.complete:
+        print(
+            f"Wishlist synchronization incomplete: {result.error}. "
+            "Keeping all existing products."
+        )
+        return False
 
     print(f"\nProducts found in wishlist: {len(links)}")
 
@@ -70,6 +154,13 @@ def sync_wishlist(wishlist_url):
         print(
             "Wishlist returned no products. Keeping all existing products "
             "because the page may be blocked, private, or incomplete."
+        )
+        return False
+
+    if tracked_products and len(links) * 2 < len(tracked_products):
+        print(
+            "Wishlist returned less than half of the tracked products. "
+            "Keeping all existing products as a safety precaution."
         )
         return False
 
@@ -138,6 +229,7 @@ def sync_wishlist(wishlist_url):
             "image_url": product_info.get("image_url"),
             "original_price": product_info.get("original_price"),
             "discount_text": product_info.get("discount_text"),
+            "availability": product_info.get("availability", "unknown"),
         }
 
         updated_products.append(new_product)
