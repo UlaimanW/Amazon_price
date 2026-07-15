@@ -6,6 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from constants import HEADERS
+from sale_utils import is_confirmed_sale
 
 
 def parse_price(price_text):
@@ -346,26 +347,15 @@ def get_product_info(url, max_attempts=6):
                 continue
 
             discount_text = detect_discount_text(soup)
-            deal_badge_found = detect_deal_badge(soup)
-
             original_price = detect_original_price(
                 soup,
                 current_price
             )
 
-            has_discount_percentage = (
-                discount_text is not None
-            )
-
-            has_lower_price = (
-                original_price is not None
-                and original_price > current_price
-            )
-
-            is_on_sale = (
-                deal_badge_found
-                or has_discount_percentage
-                or has_lower_price
+            is_on_sale = is_confirmed_sale(
+                current_price,
+                discount_text,
+                original_price,
             )
 
             print("Product title:", title)

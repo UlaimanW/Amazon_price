@@ -8,6 +8,10 @@ Telegram also alerts when products return to stock or become unavailable. A
 sale-ending alert is sent only after two consecutive successful checks confirm
 that the sale is gone.
 
+A product is counted as on sale only when Amazon provides product-level
+discount evidence: a discount percentage or a list price above the current
+price. Unrelated deal badges elsewhere on the page are ignored.
+
 Wishlist synchronization follows Amazon pagination, deduplicates products, and
 keeps the existing tracked list when a page fails, repeats, is blocked, points
 outside Amazon Saudi Arabia, or returns a suspiciously small product set.

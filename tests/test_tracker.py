@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 import price_history
 import price_checker
 import scraper
+import sale_utils
 import storage
 import wishlist
 from dashboard_utils import build_price_timeline, chunk_products, filter_products
@@ -195,6 +196,12 @@ class TrackerTests(unittest.TestCase):
         saved = storage.load_products()[0]
         self.assertEqual(saved["original_price"], 120.0)
         self.assertEqual(saved["discount_text"], "-25%")
+
+    def test_sale_requires_product_level_discount_evidence(self):
+        self.assertFalse(sale_utils.is_confirmed_sale(100.0, None, None))
+        self.assertFalse(sale_utils.is_confirmed_sale(100.0, "-0%", None))
+        self.assertTrue(sale_utils.is_confirmed_sale(75.0, "-25%", None))
+        self.assertTrue(sale_utils.is_confirmed_sale(75.0, None, 100.0))
 
     def test_empty_wishlist_does_not_erase_products(self):
         product = {
@@ -458,6 +465,8 @@ class TrackerTests(unittest.TestCase):
             "url": url,
             "last_price": 90.0,
             "was_on_sale": True,
+            "original_price": 120.0,
+            "discount_text": "-25%",
         }
         self.write_products([product])
         price_history.record_price(
@@ -465,6 +474,7 @@ class TrackerTests(unittest.TestCase):
             name=product["name"],
             price=90.0,
             is_on_sale=True,
+            original_price=120.0,
             run_id="sale-baseline",
         )
         regular_price = {
@@ -500,6 +510,43 @@ class TrackerTests(unittest.TestCase):
             [bool(row["sale_ended"]) for row in rows[-3:]],
             [False, True, False],
         )
+
+    def test_stale_sale_flag_does_not_create_sale_ended_alert(self):
+        url = "https://www.amazon.sa/dp/B000000014"
+        product = {
+            "name": "Incorrect old sale flag",
+            "url": url,
+            "last_price": 100.0,
+            "was_on_sale": True,
+            "original_price": None,
+            "discount_text": None,
+        }
+        self.write_products([product])
+        price_history.record_price(
+            url=url, name=product["name"], price=100.0,
+            is_on_sale=True, run_id="incorrect-baseline",
+        )
+        regular_price = {
+            "title": product["name"],
+            "price": "100.00 SAR",
+            "status": "success",
+            "availability": "in_stock",
+            "is_on_sale": False,
+            "discount_text": None,
+            "original_price": None,
+            "image_url": None,
+        }
+
+        with patch.object(
+            price_checker, "get_product_info", return_value=regular_price
+        ), patch.object(price_checker, "send_telegram_message") as send_message:
+            price_checker.check_prices()
+            price_checker.check_prices()
+
+        send_message.assert_not_called()
+        rows = price_history.get_price_history(url)
+        self.assertEqual([row["sale_end_streak"] for row in rows[-2:]], [0, 0])
+        self.assertFalse(storage.load_products()[0]["was_on_sale"])
 
     def test_sale_return_resets_pending_confirmation(self):
         url = "https://www.amazon.sa/dp/B000000012"

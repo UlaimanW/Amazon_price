@@ -15,6 +15,7 @@ from price_history import (
     get_product_stats,
     get_products_with_price_drops,
 )
+from sale_utils import product_is_on_sale
 from storage import load_products
 
 
@@ -143,7 +144,7 @@ def product_card_html(product):
     else:
         image_html = '<span class="image-placeholder">Image available after the next check.</span>'
 
-    sale_label = "On sale" if product.get("was_on_sale") else "Regular price"
+    sale_label = "On sale" if product_is_on_sale(product) else "Regular price"
     return (
         '<div class="product-card">'
         f'<div class="product-name" title="{safe_name}">{safe_name}</div>'
@@ -165,7 +166,7 @@ if not products:
     st.info("No products are currently tracked. Run the wishlist sync first.")
     st.stop()
 
-sale_count = sum(bool(product.get("was_on_sale")) for product in products)
+sale_count = sum(product_is_on_sale(product) for product in products)
 price_drop_urls = get_products_with_price_drops(
     product["url"] for product in products
 )

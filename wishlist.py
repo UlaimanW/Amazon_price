@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 
 from constants import HEADERS
 from scraper import get_product_info, parse_price
+from sale_utils import is_confirmed_sale
 from storage import load_products, replace_products
 
 
@@ -222,9 +223,10 @@ def sync_wishlist(wishlist_url):
             "name": product_info["title"],
             "url": link,
             "last_price": price,
-            "was_on_sale": product_info.get(
-                "is_on_sale",
-                False
+            "was_on_sale": is_confirmed_sale(
+                price,
+                product_info.get("discount_text"),
+                product_info.get("original_price"),
             ),
             "image_url": product_info.get("image_url"),
             "original_price": product_info.get("original_price"),

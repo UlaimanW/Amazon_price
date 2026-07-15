@@ -170,10 +170,10 @@ def record_price(
             previous_sale_price = None
         elif latest:
             latest_streak = latest.get("sale_end_streak") or 0
-            if bool(latest["is_on_sale"]):
-                sale_end_streak = 1
-            elif latest_streak > 0:
+            if latest_streak > 0:
                 sale_end_streak = latest_streak + 1
+            elif previous_on_sale:
+                sale_end_streak = 1
             else:
                 sale_end_streak = 0
 

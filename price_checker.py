@@ -6,6 +6,7 @@ from price_history import (
     record_price,
 )
 from scraper import get_product_info, parse_price
+from sale_utils import is_confirmed_sale, product_is_on_sale
 from storage import load_products, save_products
 
 
@@ -40,10 +41,9 @@ def check_prices():
         latest_observation = get_latest_successful_observation(url)
         if latest_observation:
             previous_price = float(latest_observation["price"])
-            previously_on_sale = bool(latest_observation["is_on_sale"])
         else:
             previous_price = float(product["last_price"])
-            previously_on_sale = product.get("was_on_sale", False)
+        previously_on_sale = product_is_on_sale(product)
 
         previous_availability = (
             get_latest_availability_observation(url)
@@ -137,6 +137,12 @@ def check_prices():
                 previous_availability=previous_availability,
             )
             continue
+
+        is_on_sale = is_confirmed_sale(
+            current_price,
+            discount_text,
+            original_price,
+        )
 
         price_dropped = current_price < previous_price
         sale_started = is_on_sale and not previously_on_sale
