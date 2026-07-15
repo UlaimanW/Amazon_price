@@ -1,8 +1,26 @@
+from sale_utils import product_is_on_sale
+
+
 def chunk_products(products, columns=3):
     return [
         products[start:start + columns]
         for start in range(0, len(products), columns)
     ]
+
+
+def build_product_badges(product, price_drop_amount=None):
+    badges = []
+    if product_is_on_sale(product):
+        discount_text = str(product.get("discount_text") or "").strip()
+        label = f"SALE {discount_text}" if discount_text else "SALE"
+        badges.append({"kind": "sale", "label": label})
+
+    if price_drop_amount is not None:
+        amount = float(price_drop_amount)
+        label = f"↓ {amount:,.2f} SAR" if amount > 0 else "PRICE DROP"
+        badges.append({"kind": "price-drop", "label": label})
+
+    return badges
 
 
 def product_discount_percent(product):

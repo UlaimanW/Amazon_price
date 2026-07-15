@@ -327,7 +327,7 @@ def get_tracker_health():
     }
 
 
-def get_products_with_price_drops(active_urls=None):
+def get_latest_price_drop_events(active_urls=None):
     initialize_history()
     with closing(sqlite3.connect(HISTORY_FILE)) as connection:
         latest_run = connection.execute(
@@ -340,24 +340,35 @@ def get_products_with_price_drops(active_urls=None):
             """
         ).fetchone()
         if not latest_run:
-            return set()
+            return {}
 
-        dropped_urls = {
-            row[0] for row in connection.execute(
+        drop_events = {
+            row[0]: abs(row[1]) if row[1] is not None else None
+            for row in connection.execute(
                 """
-                SELECT DISTINCT url
+                SELECT url, price_change
                 FROM price_history
                 WHERE run_id = ? AND scrape_status = 'success'
                   AND price_dropped = 1
+                ORDER BY id
                 """,
                 (latest_run[0],),
             ).fetchall()
         }
 
     if active_urls is not None:
-        dropped_urls &= set(active_urls)
+        active_urls = set(active_urls)
+        drop_events = {
+            url: amount
+            for url, amount in drop_events.items()
+            if url in active_urls
+        }
 
-    return dropped_urls
+    return drop_events
+
+
+def get_products_with_price_drops(active_urls=None):
+    return set(get_latest_price_drop_events(active_urls))
 
 
 def count_products_with_price_drops(active_urls=None):

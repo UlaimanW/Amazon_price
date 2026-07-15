@@ -14,7 +14,12 @@ import scraper
 import sale_utils
 import storage
 import wishlist
-from dashboard_utils import build_price_timeline, chunk_products, filter_products
+from dashboard_utils import (
+    build_price_timeline,
+    build_product_badges,
+    chunk_products,
+    filter_products,
+)
 
 
 class TrackerTests(unittest.TestCase):
@@ -202,6 +207,29 @@ class TrackerTests(unittest.TestCase):
         self.assertFalse(sale_utils.is_confirmed_sale(100.0, "-0%", None))
         self.assertTrue(sale_utils.is_confirmed_sale(75.0, "-25%", None))
         self.assertTrue(sale_utils.is_confirmed_sale(75.0, None, 100.0))
+
+    def test_product_can_show_sale_and_price_drop_badges(self):
+        product = {
+            "last_price": 75.0,
+            "original_price": 100.0,
+            "discount_text": "-25%",
+        }
+
+        badges = build_product_badges(product, 12.5)
+
+        self.assertEqual(badges, [
+            {"kind": "sale", "label": "SALE -25%"},
+            {"kind": "price-drop", "label": "↓ 12.50 SAR"},
+        ])
+
+    def test_regular_product_has_no_badges(self):
+        product = {
+            "last_price": 100.0,
+            "original_price": None,
+            "discount_text": None,
+        }
+
+        self.assertEqual(build_product_badges(product), [])
 
     def test_empty_wishlist_does_not_erase_products(self):
         product = {
@@ -428,6 +456,9 @@ class TrackerTests(unittest.TestCase):
         self.assertEqual(rows[-1]["price_change"], -20.0)
         self.assertEqual(
             price_history.count_products_with_price_drops([url]), 1
+        )
+        self.assertEqual(
+            price_history.get_latest_price_drop_events([url]), {url: 20.0}
         )
 
     def test_removed_products_are_not_counted(self):

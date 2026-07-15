@@ -7,13 +7,14 @@ import streamlit as st
 from dashboard_utils import (
     EVENT_DETAILS,
     build_price_timeline,
+    build_product_badges,
     chunk_products,
     filter_products,
 )
 from price_history import (
+    get_latest_price_drop_events,
     get_price_history,
     get_product_stats,
-    get_products_with_price_drops,
 )
 from sale_utils import product_is_on_sale
 from storage import load_products
@@ -37,8 +38,24 @@ st.markdown(
         border: 1px solid #d1d5db; border-radius: 12px;
         background: #ffffff;
     }
+    .product-badges {
+        min-height: 26px; display: flex; align-items: center;
+        flex-wrap: wrap; gap: 6px; margin-bottom: 7px;
+    }
+    .product-badge {
+        display: inline-flex; align-items: center;
+        min-height: 22px; padding: 2px 8px;
+        border-radius: 999px; font-size: .72rem;
+        font-weight: 700; letter-spacing: .02em;
+    }
+    .product-badge.sale {
+        color: #9a3412; background: #ffedd5; border: 1px solid #fdba74;
+    }
+    .product-badge.price-drop {
+        color: #166534; background: #dcfce7; border: 1px solid #86efac;
+    }
     .product-image-box {
-        height: 225px; width: 100%; display: flex;
+        height: 210px; width: 100%; display: flex;
         align-items: center; justify-content: center; margin: 4px 0 10px;
     }
     .product-image-box img {
@@ -131,7 +148,7 @@ def sale_price_html(product):
     return price_line
 
 
-def product_card_html(product):
+def product_card_html(product, price_drop_amount=None):
     safe_name = html.escape(product["name"], quote=True)
     safe_product_url = html.escape(product["url"], quote=True)
     image_url = product.get("image_url")
@@ -144,9 +161,17 @@ def product_card_html(product):
     else:
         image_html = '<span class="image-placeholder">Image available after the next check.</span>'
 
+    badges = build_product_badges(product, price_drop_amount)
+    badges_html = "".join(
+        f'<span class="product-badge {badge["kind"]}">'
+        f'{html.escape(badge["label"])}</span>'
+        for badge in badges
+    )
+
     sale_label = "On sale" if product_is_on_sale(product) else "Regular price"
     return (
         '<div class="product-card">'
+        f'<div class="product-badges">{badges_html}</div>'
         f'<div class="product-name" title="{safe_name}">{safe_name}</div>'
         f'<div class="product-image-box">{image_html}</div>'
         f'{sale_price_html(product)}'
@@ -167,14 +192,14 @@ if not products:
     st.stop()
 
 sale_count = sum(product_is_on_sale(product) for product in products)
-price_drop_urls = get_products_with_price_drops(
+price_drop_events = get_latest_price_drop_events(
     product["url"] for product in products
 )
 
 metric_columns = st.columns(3)
 metric_columns[0].metric("Tracked products", len(products))
 metric_columns[1].metric("Currently on sale", sale_count)
-metric_columns[2].metric("Products with price drops", len(price_drop_urls))
+metric_columns[2].metric("Products with price drops", len(price_drop_events))
 
 st.subheader("Products")
 
@@ -212,7 +237,12 @@ for product_row in chunk_products(visible_products):
     product_columns = st.columns(3)
     for column, product in zip(product_columns, product_row):
         with column:
-            st.markdown(product_card_html(product), unsafe_allow_html=True)
+            st.markdown(
+                product_card_html(
+                    product, price_drop_events.get(product["url"])
+                ),
+                unsafe_allow_html=True,
+            )
 
 if not visible_products:
     st.info("No products match the selected filters.")

@@ -44,6 +44,8 @@ increases, sale starts, and confirmed sale endings. A table below the chart
 lists the same events and price changes. The dashboard reads the same
 `products.json` and `price_history.db` used by the scheduled tracker.
 The product grid can be searched and sorted by name, price, or discount.
+Sale products have an orange badge, while products that dropped during the
+latest tracker run have a green badge showing the drop amount.
 
 ## Configuration
 
