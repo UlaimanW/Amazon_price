@@ -3,6 +3,7 @@ import html
 import altair as alt
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from app import run_tracker
 from ai_assistant import ask_shopping_assistant
@@ -130,6 +131,29 @@ st.markdown(
 
 def money(value):
     return "—" if value is None else f"{value:,.2f} SAR"
+
+
+def scroll_to_latest_chat_message():
+    components.html(
+        """
+        <script>
+        const scrollToLatestMessage = () => {
+            const componentFrame = window.frameElement;
+            if (componentFrame) {
+                componentFrame.scrollIntoView({
+                    behavior: "smooth",
+                    block: "end"
+                });
+            }
+        };
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(scrollToLatestMessage);
+        });
+        </script>
+        """,
+        height=0,
+        scrolling=False,
+    )
 
 
 def sale_price_html(product):
@@ -460,3 +484,4 @@ else:
         st.session_state.ai_chat_messages.append({
             "role": "assistant", "content": assistant_answer
         })
+        scroll_to_latest_chat_message()
