@@ -1,4 +1,4 @@
-from sale_utils import product_is_on_sale
+from sale_utils import product_discount_percent, product_is_on_sale
 
 
 def chunk_products(products, columns=3):
@@ -29,26 +29,6 @@ def build_product_badges(product, price_change=None):
         })
 
     return badges
-
-
-def product_discount_percent(product):
-    discount_text = str(product.get("discount_text") or "").strip()
-    if discount_text:
-        try:
-            return abs(float(discount_text.replace("%", "")))
-        except ValueError:
-            pass
-
-    current_price = product.get("last_price")
-    original_price = product.get("original_price")
-    if current_price is None or original_price is None:
-        return 0.0
-
-    current_price = float(current_price)
-    original_price = float(original_price)
-    if original_price <= 0 or original_price <= current_price:
-        return 0.0
-    return ((original_price - current_price) / original_price) * 100
 
 
 def filter_products(products, *, search="", sort_by="Name"):

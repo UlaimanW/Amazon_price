@@ -5,6 +5,8 @@ import pandas as pd
 import streamlit as st
 
 from app import run_tracker
+from ai_assistant import ask_shopping_assistant
+from config import GROQ_API_KEY
 from dashboard_utils import (
     EVENT_DETAILS,
     build_price_timeline,
@@ -19,6 +21,7 @@ from price_history import (
 )
 from sale_utils import product_is_on_sale
 from storage import load_products
+from tracker_status import format_last_successful_run, load_last_successful_run
 
 
 st.set_page_config(page_title="Amazon Price Tracker", page_icon="🛒", layout="wide")
@@ -203,7 +206,9 @@ run_now = st.button(
 if run_now and not st.session_state.tracker_running:
     st.session_state.tracker_running = True
     try:
-        with st.spinner("Synchronizing the wishlist and checking prices..."):
+        with st.spinner(
+            "Synchronizing the wishlist and checking prices..."
+        ):
             run_tracker(raise_errors=True)
     except Exception as error:
         st.error(f"Tracker run failed: {error}")
@@ -211,6 +216,8 @@ if run_now and not st.session_state.tracker_running:
         st.success("Tracker completed successfully. Dashboard data is updated.")
     finally:
         st.session_state.tracker_running = False
+
+st.caption(format_last_successful_run(load_last_successful_run()))
 
 products = load_products()
 
@@ -368,3 +375,88 @@ if observations:
         st.info("No price or sale changes have been recorded for this product yet.")
 else:
     st.info("Price history will appear after the next successful tracker run.")
+
+st.subheader("AI Shopping Assistant")
+st.caption(
+    "Ask naturally about tracked prices, discounts, history, or customer reviews."
+)
+
+if not GROQ_API_KEY:
+    st.info("Add GROQ_API_KEY to .env to enable the AI assistant.")
+else:
+    if "ai_chat_messages" not in st.session_state:
+        st.session_state.ai_chat_messages = []
+
+    review_product_index = st.selectbox(
+        "Product for review questions (optional)",
+        [None, *range(len(products))],
+        format_func=lambda index: (
+            "Automatically detect from my question"
+            if index is None else products[index]["name"]
+        ),
+        key="ai_review_product",
+    )
+    selected_review_product = (
+        products[review_product_index]
+        if review_product_index is not None else None
+    )
+
+    if st.session_state.ai_chat_messages:
+        if st.button(
+            "↻ Clear conversation",
+            key="clear_ai_conversation",
+            type="secondary",
+        ):
+            st.session_state.ai_chat_messages = []
+            st.rerun()
+
+    for message in st.session_state.ai_chat_messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    with st.form("ai_chat_form", clear_on_submit=True):
+        user_question = st.text_input(
+            "Message",
+            placeholder=(
+                "Ask something, for example: Summarize the reviews "
+                "for the headphones."
+            ),
+            label_visibility="collapsed",
+        )
+        send_question = st.form_submit_button("Send")
+
+    user_question = user_question.strip() if send_question else ""
+    if user_question:
+        prior_messages = list(st.session_state.ai_chat_messages)
+        st.session_state.ai_chat_messages.append({
+            "role": "user", "content": user_question
+        })
+        with st.chat_message("user"):
+            st.markdown(user_question)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Checking your tracker data and reviews..."):
+                try:
+                    assistant_answer = ask_shopping_assistant(
+                        user_question,
+                        products,
+                        conversation=prior_messages,
+                        api_key=GROQ_API_KEY,
+                        selected_product=selected_review_product,
+                    )
+                except Exception as error:
+                    error_text = str(error).strip()
+                    if "connection" in error_text.casefold():
+                        assistant_answer = (
+                            "I could not reach the AI service. Please try again. "
+                            "If it continues, restart the dashboard."
+                        )
+                    else:
+                        assistant_answer = (
+                            f"I could not answer that: {error_text}"
+                        )
+            st.markdown(assistant_answer)
+
+        st.session_state.ai_chat_messages.append({
+            "role": "assistant", "content": assistant_answer
+        })

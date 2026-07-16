@@ -9,6 +9,7 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 WISHLIST_URL = os.getenv("WISHLIST_URL")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 
 def validate_config():

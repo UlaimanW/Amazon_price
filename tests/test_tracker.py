@@ -9,12 +9,15 @@ from unittest.mock import Mock, patch
 from bs4 import BeautifulSoup
 
 import app as tracker_app
+import ai_assistant
 import price_history
 import price_checker
 import scraper
 import sale_utils
 import storage
+import tracker_status
 import wishlist
+import review_scraper
 from dashboard_utils import (
     build_price_timeline,
     build_product_badges,
@@ -28,6 +31,7 @@ class TrackerTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.products_file = Path(self.temp_dir.name) / "products.json"
         self.history_file = Path(self.temp_dir.name) / "history.db"
+        self.status_file = Path(self.temp_dir.name) / "tracker_status.json"
         self.products_file.write_text("[]", encoding="utf-8")
         self.storage_patch = patch.object(
             storage, "PRODUCTS_FILE", str(self.products_file)
@@ -35,12 +39,17 @@ class TrackerTests(unittest.TestCase):
         self.history_patch = patch.object(
             price_history, "HISTORY_FILE", self.history_file
         )
+        self.status_patch = patch.object(
+            tracker_status, "STATUS_FILE", self.status_file
+        )
         self.storage_patch.start()
         self.history_patch.start()
+        self.status_patch.start()
 
     def tearDown(self):
         self.storage_patch.stop()
         self.history_patch.stop()
+        self.status_patch.stop()
         self.temp_dir.cleanup()
 
     def write_products(self, products):
@@ -66,6 +75,29 @@ class TrackerTests(unittest.TestCase):
         validate.assert_called_once_with()
         sync.assert_called_once_with(tracker_app.WISHLIST_URL)
         check.assert_called_once_with()
+        self.assertIsNotNone(tracker_status.load_last_successful_run())
+
+    def test_failed_tracker_run_does_not_update_last_successful_run(self):
+        with patch.object(tracker_app, "validate_config"), patch.object(
+            tracker_app, "sync_wishlist", side_effect=RuntimeError("Sync failed")
+        ), patch.object(tracker_app, "check_prices"):
+            with self.assertRaisesRegex(RuntimeError, "Sync failed"):
+                tracker_app.run_tracker(raise_errors=True)
+
+        self.assertIsNone(tracker_status.load_last_successful_run())
+
+    def test_last_successful_run_is_displayed_in_saudi_time(self):
+        completed_at = tracker_status.datetime.fromisoformat(
+            "2026-07-16T07:15:00+00:00"
+        )
+
+        tracker_status.record_successful_run(completed_at)
+
+        saved = tracker_status.load_last_successful_run()
+        self.assertEqual(
+            tracker_status.format_last_successful_run(saved),
+            "Last successful run: 16 July 2026 at 10:15 AM (Saudi time)",
+        )
 
     def test_dashboard_tracker_run_can_surface_configuration_error(self):
         with patch.object(
@@ -845,6 +877,259 @@ class TrackerTests(unittest.TestCase):
             [product["name"] for product in result],
             ["Cheap", "Middle", "Expensive"],
         )
+
+    def test_review_parser_extracts_limited_anonymous_sample(self):
+        fixture = Path(__file__).parent / "fixtures" / "amazon_reviews.html"
+
+        reviews = review_scraper.parse_reviews(
+            fixture.read_text(encoding="utf-8"), max_reviews=2
+        )
+
+        self.assertEqual(len(reviews), 2)
+        self.assertEqual(reviews[0]["rating"], 5.0)
+        self.assertIn("noise cancellation", reviews[0]["body"])
+        self.assertNotIn("reviewer", reviews[0])
+
+    def test_review_parser_supports_current_product_page_markup(self):
+        fixture = (
+            Path(__file__).parent
+            / "fixtures"
+            / "amazon_product_reviews.html"
+        )
+
+        reviews = review_scraper.parse_reviews(
+            fixture.read_text(encoding="utf-8"), max_reviews=20
+        )
+
+        self.assertEqual(len(reviews), 2)
+        self.assertEqual(reviews[0]["title"], "Comfortable controls")
+        self.assertEqual(reviews[0]["rating"], 5.0)
+        self.assertIn("comfortable and responsive", reviews[0]["body"])
+
+    def test_review_parser_reports_captcha(self):
+        html_text = (
+            "<html><head><title>Robot Check</title></head>"
+            "<body><input id='captchacharacters'></body></html>"
+        )
+
+        with self.assertRaisesRegex(
+            review_scraper.ReviewFetchError, "CAPTCHA"
+        ):
+            review_scraper.parse_reviews(html_text)
+
+    def test_natural_language_matches_headphones_for_reviews(self):
+        products = [
+            {"name": "Sony Wireless Headphones", "url": "headphones"},
+            {"name": "Gaming Mouse", "url": "mouse"},
+        ]
+
+        matched = ai_assistant.match_products(
+            "Summarize the reviews for the headphone.", products
+        )
+
+        self.assertEqual(matched, [products[0]])
+        self.assertTrue(ai_assistant.question_needs_reviews(
+            "What do customers complain about in the headphones reviews?"
+        ))
+
+    def test_summarize_product_intent_loads_reviews(self):
+        product = {
+            "name": "PlayStation 5 DualSense Wireless Controller Purple",
+            "url": "https://www.amazon.sa/dp/B000000302",
+        }
+        review_loader = Mock(return_value=[{
+            "title": "Good controller",
+            "rating": 5.0,
+            "body": "Comfortable controls.",
+        }])
+
+        context = ai_assistant.load_review_context(
+            "Summarize PlayStation 5 DualSense Wireless Controller Purple",
+            [product],
+            [],
+            review_loader,
+        )
+
+        review_loader.assert_called_once_with(product["url"], max_reviews=20)
+        self.assertEqual(context[0]["sample_size"], 1)
+        self.assertEqual(context[0]["average_sample_rating"], 5.0)
+        self.assertEqual(context[0]["sample_rating_distribution"], {
+            "5 stars": 1
+        })
+
+    def test_review_fetch_tries_product_page_variants_in_one_session(self):
+        fixture = (
+            Path(__file__).parent
+            / "fixtures"
+            / "amazon_product_reviews.html"
+        )
+        empty_response = Mock(status_code=200, text="<html>No reviews</html>")
+        empty_response.raise_for_status.return_value = None
+        product_response = Mock(
+            status_code=200,
+            text=fixture.read_text(encoding="utf-8"),
+        )
+        product_response.raise_for_status.return_value = None
+        product_url = "https://www.amazon.sa/dp/B000000303"
+        session = Mock()
+        session.get.side_effect = [empty_response, product_response]
+        retry_sleep = Mock()
+
+        reviews = review_scraper.fetch_product_reviews(
+            product_url,
+            max_reviews=2,
+            session=session,
+            product_page_attempts=2,
+            retry_sleep=retry_sleep,
+        )
+
+        self.assertEqual(len(reviews), 2)
+        self.assertEqual(session.get.call_count, 2)
+        self.assertEqual(session.get.call_args_list[0].args[0], product_url)
+        self.assertEqual(
+            session.get.call_args_list[1].args[0],
+            f"{product_url}?th=1",
+        )
+        retry_sleep.assert_called_once_with(
+            review_scraper.REVIEW_RETRY_SECONDS
+        )
+
+    def test_review_fetch_tries_locale_pages_after_product_page(self):
+        fixture = Path(__file__).parent / "fixtures" / "amazon_reviews.html"
+        empty_response = Mock(status_code=200, text="<html>No reviews</html>")
+        empty_response.raise_for_status.return_value = None
+        review_response = Mock(
+            status_code=200,
+            text=fixture.read_text(encoding="utf-8"),
+        )
+        review_response.raise_for_status.return_value = None
+        session = Mock()
+        session.get.side_effect = [empty_response, review_response]
+        product_url = "https://www.amazon.sa/dp/B000000304?tag=tracking"
+
+        reviews = review_scraper.fetch_product_reviews(
+            product_url,
+            max_reviews=2,
+            session=session,
+            product_page_attempts=1,
+            retry_sleep=Mock(),
+        )
+
+        self.assertEqual(len(reviews), 2)
+        self.assertEqual(
+            session.get.call_args_list[0].args[0],
+            "https://www.amazon.sa/dp/B000000304",
+        )
+        self.assertIn(
+            "product-reviews/B000000304",
+            session.get.call_args_list[1].args[0],
+        )
+
+    def test_review_cache_uses_saved_sample_during_temporary_block(self):
+        cache_file = Path(self.temp_dir.name) / "review-cache.json"
+        product_url = "https://www.amazon.sa/dp/B000000305"
+        sample = [{
+            "title": "Reliable",
+            "rating": 5.0,
+            "body": "Works well.",
+        }]
+        stale_time = review_scraper.REVIEW_CACHE_SECONDS + 1
+
+        review_scraper._review_cache.clear()
+        with patch.object(
+            review_scraper, "REVIEW_CACHE_FILE", cache_file
+        ), patch.object(
+            review_scraper,
+            "fetch_product_reviews",
+            side_effect=[
+                sample,
+                review_scraper.ReviewFetchError("Amazon blocked the request"),
+            ],
+        ) as fetch:
+            first = review_scraper.get_cached_product_reviews(
+                product_url, max_reviews=20, now=1000
+            )
+            review_scraper._review_cache.clear()
+            second = review_scraper.get_cached_product_reviews(
+                product_url, max_reviews=20, now=1000 + stale_time
+            )
+
+        self.assertEqual(first, sample)
+        self.assertFalse(first.using_stale_cache)
+        self.assertEqual(second, sample)
+        self.assertTrue(second.using_stale_cache)
+        self.assertTrue(cache_file.exists())
+        self.assertEqual(fetch.call_count, 2)
+        review_scraper._review_cache.clear()
+
+    def test_selected_product_controls_review_target(self):
+        products = [
+            {"name": "Spigen Watch Stand", "url": "spigen"},
+            {"name": "Lamicall Watch Stand", "url": "lamicall"},
+        ]
+        review_loader = Mock(return_value=[])
+
+        context = ai_assistant.load_review_context(
+            "Summarize the stand reviews",
+            products,
+            [],
+            review_loader,
+            selected_product=products[1],
+        )
+
+        review_loader.assert_called_once_with("lamicall", max_reviews=20)
+        self.assertEqual([item["product"] for item in context], [
+            "Lamicall Watch Stand"
+        ])
+
+    def test_ai_assistant_uses_groq_model_and_grounded_reviews(self):
+        product = {
+            "name": "Sony Wireless Headphones",
+            "url": "https://www.amazon.sa/dp/B000000301",
+            "last_price": 1000.0,
+            "original_price": 1200.0,
+            "discount_text": "-17%",
+        }
+        self.write_products([product])
+        price_history.record_price(
+            url=product["url"], name=product["name"], price=1000.0,
+            run_id="assistant-test",
+        )
+        client = Mock()
+        client.chat.completions.create.return_value = Mock(
+            choices=[Mock(message=Mock(content="Grounded review summary"))]
+        )
+        review_loader = Mock(return_value=[{
+            "title": "Comfortable",
+            "rating": 5.0,
+            "body": "Comfortable for long listening sessions.",
+        }])
+
+        answer = ai_assistant.ask_shopping_assistant(
+            "Summarize the reviews for the headphones.",
+            [product],
+            api_key="test-key",
+            client=client,
+            review_loader=review_loader,
+        )
+
+        self.assertEqual(answer, "Grounded review summary")
+        review_loader.assert_called_once_with(product["url"], max_reviews=20)
+        request = client.chat.completions.create.call_args.kwargs
+        self.assertEqual(request["model"], "llama-3.3-70b-versatile")
+        supplied_context = "\n".join(
+            message["content"] for message in request["messages"]
+        )
+        self.assertIn("Comfortable for long listening sessions", supplied_context)
+        self.assertIn('"average_sample_rating": 5.0', supplied_context)
+        self.assertIn("Never invent reviews", supplied_context)
+        self.assertIn("at least two distinct reviews", supplied_context)
+
+    def test_ai_assistant_requires_api_key(self):
+        with self.assertRaisesRegex(ValueError, "GROQ_API_KEY"):
+            ai_assistant.ask_shopping_assistant(
+                "Which product is cheapest?", [], api_key=None
+            )
 
 
 if __name__ == "__main__":

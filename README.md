@@ -41,6 +41,22 @@ The private dashboard includes a **Run tracker now** button that performs the
 same wishlist synchronization and price check as `python app.py run`, including
 normal Telegram alerts.
 
+The AI shopping assistant treats `summarize PRODUCT` as a review-summary
+request. It tries several public Amazon product-page variants because review
+sections can be loaded inconsistently, supports both old and current review
+markup, and then falls back to Amazon Saudi's generic, English, and Arabic
+review pages. An optional product selector resolves ambiguous requests.
+Successful samples are cached for six hours, and reviews are never invented
+when no public sample is accessible. Successful anonymous samples are also
+cached locally (and excluded from Git); if Amazon is temporarily blocked, a
+sample saved within the previous seven days can be used with a clear stale-cache
+disclosure.
+
+The dashboard also includes a natural-language AI shopping assistant powered
+by Groq's `llama-3.3-70b-versatile`. It can explain tracked prices and history
+or summarize a limited, accessible sample of Amazon reviews. Review samples are
+cached for six hours and unavailable reviews are reported rather than invented.
+
 It shows compact product cards in a responsive three-column grid with names,
 pictures, current sale status, Amazon links, historical price charts, and
 lowest/highest/average prices. The history chart marks price drops, price
@@ -60,6 +76,7 @@ Set these values locally in `.env`, or as GitHub Actions secrets:
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 WISHLIST_URL=...
+GROQ_API_KEY=...
 ```
 
 ## Storage

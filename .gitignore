@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 debug_amazon.html
 wishlist_debug.html
+.review_cache.json
 *.db-journal
 *.db-shm
 *.db-wal

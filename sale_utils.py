@@ -24,3 +24,23 @@ def product_is_on_sale(product):
         product.get("discount_text"),
         product.get("original_price"),
     )
+
+
+def product_discount_percent(product):
+    discount_text = str(product.get("discount_text") or "").strip()
+    if discount_text:
+        try:
+            return abs(float(discount_text.replace("%", "")))
+        except ValueError:
+            pass
+
+    current_price = product.get("last_price")
+    original_price = product.get("original_price")
+    if current_price is None or original_price is None:
+        return 0.0
+
+    current_price = float(current_price)
+    original_price = float(original_price)
+    if original_price <= 0 or original_price <= current_price:
+        return 0.0
+    return ((original_price - current_price) / original_price) * 100

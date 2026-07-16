@@ -4,6 +4,7 @@ from config import WISHLIST_URL, validate_config
 from price_checker import check_prices
 from storage import load_products, remove_product
 from price_history import get_product_stats
+from tracker_status import record_successful_run
 from wishlist import sync_wishlist
 
 
@@ -50,6 +51,7 @@ def run_tracker(raise_errors=False):
     print("\nStarting price check...\n")
     check_prices()
 
+    record_successful_run()
     print("\nTracker run completed.")
     return True
 
