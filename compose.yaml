@@ -1,0 +1,17 @@
+services:
+  amazon_price:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: amazon_price:latest
+    container_name: amazon_price
+    init: true
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./products.json:/app/products.json
+      - ./price_history.db:/app/price_history.db
+      - ./tracker_status.json:/app/tracker_status.json

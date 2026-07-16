@@ -1,0 +1,14 @@
+.git
+.github
+.env
+.venv
+__pycache__
+*.py[cod]
+*.db-journal
+*.db-shm
+*.db-wal
+.review_cache.json
+debug_amazon.html
+wishlist_debug.html
+tests
+README.md
