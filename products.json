@@ -42,11 +42,11 @@
     {
         "name": "Lamicall Stand for Apple Watch, Charging Stand - [Not Charger] Desk iWatch Holder Charging Dock Station for Apple Watch Ultra2, Ultra, Series 10/9/8/SE2/7/6/SE/5/4/3/2/1 (49/45/44/42/41/38mm)- Black",
         "url": "https://www.amazon.sa/dp/B07Q8TQ892",
-        "last_price": 49.99,
-        "was_on_sale": false,
+        "last_price": 39.99,
+        "was_on_sale": true,
         "image_url": "https://m.media-amazon.com/images/I/61ZNTZiyfiL._AC_SL1300_.jpg",
-        "original_price": null,
-        "discount_text": null,
+        "original_price": 49.99,
+        "discount_text": "-20%",
         "availability": "in_stock"
     },
     {
