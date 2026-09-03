@@ -12,11 +12,11 @@
     {
         "name": "AMD Ryzen 7 9800X3D AM5 Desktop Processor, 8 Cores & 16 Threads, Up to 5.2 GHz Max Boost Clock, Integrated AMD Radeon Graphics, 192GB Max Memory, Dual Channel, 96MB L3 Cache",
         "url": "https://www.amazon.sa/dp/B0DKFMSMYK",
-        "last_price": 2031.28,
-        "was_on_sale": false,
+        "last_price": 1949.0,
+        "was_on_sale": true,
         "image_url": "https://m.media-amazon.com/images/I/71NMFO0iUhL._AC_SL1500_.jpg",
-        "original_price": null,
-        "discount_text": null,
+        "original_price": 2099.0,
+        "discount_text": "-7%",
         "availability": "in_stock"
     },
     {
