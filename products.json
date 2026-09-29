@@ -32,12 +32,12 @@
     {
         "name": "علم التحكم الالي النفسي",
         "url": "https://www.amazon.sa/dp/6140135125",
-        "last_price": 59.0,
-        "was_on_sale": true,
+        "last_price": 32.81,
+        "was_on_sale": false,
         "image_url": "https://m.media-amazon.com/images/I/71clIXt-SAL._SL1360_.jpg",
-        "original_price": 109.57,
-        "discount_text": "-45%",
-        "availability": "temporarily_unavailable"
+        "original_price": null,
+        "discount_text": null,
+        "availability": "unknown"
     },
     {
         "name": "Digital Alarm Clock, with Wooden Electronic LED Time Display, 3 Alarm Settings, Humidity & Temperature Detect, Wood Made Electric Clocks for Bedroom, Bedside, Black",
