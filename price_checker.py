@@ -3,10 +3,11 @@ from price_history import (
     create_run_id,
     get_latest_availability_observation,
     get_latest_successful_observation,
+    get_product_stats,
     record_price,
 )
 from scraper import get_product_info, parse_price
-from sale_utils import is_confirmed_sale, product_is_on_sale
+from sale_utils import is_confirmed_sale, product_is_on_sale, product_discount_percent
 from storage import load_products, save_products
 
 
@@ -26,6 +27,29 @@ def availability_label(status):
         "unknown": "Unknown",
         None: "Unknown",
     }.get(status, "Unknown")
+
+
+def format_price_drop(current, previous, lowest, original, discount_text):
+    lines = [
+        "📉 Price dropped",
+        "",
+        f"💰 Current price: {current:.2f} SAR",
+        f"📉 Previous price: {previous:.2f} SAR",
+        f"💵 Price drop savings: {previous - current:.2f} SAR",
+        f"📊 Lowest price in history: {lowest:.2f} SAR",
+    ]
+    if original is not None and original > current:
+        lines.extend([
+            f"🏷️ Original price: {original:.2f} SAR",
+            f"💸 You save: {original - current:.2f} SAR",
+        ])
+    discount = product_discount_percent({
+        "last_price": current, "original_price": original, "discount_text": discount_text,
+    })
+    if discount > 0:
+        percent = f"{discount:.2f}".rstrip("0").rstrip(".") if discount_text else f"{discount:.0f}"
+        lines.append(f"🔖 Discount: -{percent}%")
+    return "\n".join(lines)
 
 
 def check_prices():
@@ -168,17 +192,14 @@ def check_prices():
         back_in_stock = price_event["back_in_stock"]
         became_unavailable = price_event["became_unavailable"]
 
-        if (
-            price_dropped
-            or sale_started
-            or sale_ended
-            or back_in_stock
-            or became_unavailable
-        ):
-            alert_reasons = []
+        if price_dropped:
+            lowest = get_product_stats(url)["lowest_price"]
+            send_telegram_message(format_price_drop(
+                current_price, previous_price, lowest, original_price, discount_text
+            ))
 
-            if price_dropped:
-                alert_reasons.append("📉 Price dropped")
+        if sale_started or sale_ended or back_in_stock or became_unavailable:
+            alert_reasons = []
 
             if sale_started:
                 alert_reasons.append("🔥 Sale started")
@@ -208,18 +229,6 @@ def check_prices():
                     f"{availability_label(previous_availability)}",
                     f"📦 Current status: {availability_label(availability)}",
                 ])
-
-            if price_dropped:
-                price_drop_savings = previous_price - current_price
-
-                message_lines.append(
-                    f"📉 Previous price: {previous_price:.2f} SAR"
-                )
-
-                message_lines.append(
-                    f"💵 Price drop savings: "
-                    f"{price_drop_savings:.2f} SAR"
-                )
 
             if sale_ended and price_event["previous_sale_price"] is not None:
                 previous_sale_price = price_event["previous_sale_price"]
@@ -262,7 +271,7 @@ def check_prices():
 
             print("Telegram alert sent.")
 
-        else:
+        elif not price_dropped:
             print(
                 "No price drop or new sale detected."
             )
