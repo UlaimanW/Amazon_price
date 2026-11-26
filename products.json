@@ -1,5 +1,15 @@
 [
     {
+        "name": "CORSAIR NAUTILUS 360 RS ARGB AIO 360mm Liquid Cooler Compatible with Intel LGA 1851/1700, AMD AM5/AM4, Includes 3 RS120 ARGB Fans - Black",
+        "url": "https://www.amazon.sa/dp/B0DF7C4YPQ",
+        "last_price": 399.0,
+        "was_on_sale": true,
+        "image_url": "https://m.media-amazon.com/images/I/71Y7oR5hBzL._AC_SL1500_.jpg",
+        "original_price": 444.88,
+        "discount_text": "-10%",
+        "availability": "in_stock"
+    },
+    {
         "name": "CORSAIR NAUTILUS 360 RS AIO 360mm Liquid Cooler for Intel LGA 1851/1700 and AMD AM5/AM4, Includes 3 RS120 Fans - Black",
         "url": "https://www.amazon.sa/dp/B0DF7B7324",
         "last_price": 329.0,
@@ -32,11 +42,11 @@
     {
         "name": "AMD Ryzen 7 9800X3D AM5 Desktop Processor, 8 Cores & 16 Threads, Up to 5.2 GHz Max Boost Clock, Integrated AMD Radeon Graphics, 192GB Max Memory, Dual Channel, 96MB L3 Cache",
         "url": "https://www.amazon.sa/dp/B0DKFMSMYK",
-        "last_price": 1839.0,
+        "last_price": 1885.0,
         "was_on_sale": true,
         "image_url": "https://m.media-amazon.com/images/I/71NMFO0iUhL._AC_SL1500_.jpg",
         "original_price": 2099.0,
-        "discount_text": "-12%",
+        "discount_text": "-10%",
         "availability": "in_stock"
     },
     {
